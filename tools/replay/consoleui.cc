@@ -170,9 +170,10 @@ void ConsoleUI::updateStatus() {
   auto [status_str, status_color] = status_text[status];
   write_item(0, 0, "STATUS:    ", status_str, "      ", false, status_color);
   auto cur_ts = replay->routeDateTime() + (int)replay->currentSeconds();
-  char *time_string = ctime(&cur_ts);
+  const char *time_string = ctime(&cur_ts);
+  const std::string time_display = time_string ? time_string : "(invalid time)";
   std::string current_segment = " - " + std::to_string((int)(replay->currentSeconds() / 60));
-  write_item(0, 25, "TIME:  ", time_string, current_segment, true);
+  write_item(0, 25, "TIME:  ", time_display, current_segment, true);
 
   auto p = sm["liveParameters"].getLiveParameters();
   write_item(1, 0, "STIFFNESS: ", util::string_format("%.2f %%", p.getStiffnessFactor() * 100), "  ");
