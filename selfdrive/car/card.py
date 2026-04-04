@@ -221,19 +221,9 @@ class Car:
       self.pm.send('liveTracks', tracks_msg)
 
     # poke the bear
-    if CS.UI_autopilotControlIndex_raw is not None and CS.UI_autopilotControlIndex_updated:
-      # set bit 46 / signal UI_enableFullSelfDriving to 1
-      # INSERT_YOUR_CODE
-      # Set bit 46 (counting from LSB) to 1 in UI_autopilotControlIndex_raw bytes object
-      if len(CS.UI_autopilotControlIndex_raw) >= 6:
-        # Convert bytes to mutable bytearray for bit manipulation
-        b = bytearray(CS.UI_autopilotControlIndex_raw)
-        # Bit 46 is bit 6 of byte 5 (indices 0-based, little-endian order)
-        b[5] |= (1 << 6)
-        UI_autopilotControlIndex_raw_modified = bytes(b)
-        can_sends = [CanData(0x3F8, UI_autopilotControlIndex_raw_modified, 1)]
-        self.pm.send('sendcan', can_list_to_can_capnp(can_sends, msgtype='sendcan', valid=CS.canValid))
-        cloudlog.warning(f"UI_autopilotControlIndex_raw_modified: {UI_autopilotControlIndex_raw_modified}")
+    can_sends = self.CI.poke_the_bear()
+    if can_sends is not None:
+      self.pm.send('sendcan', can_list_to_can_capnp(can_sends, msgtype='sendcan', valid=CS.canValid))
 
   def controls_update(self, CS: car.CarState, CC: car.CarControl):
     """control update loop, driven by carControl"""
