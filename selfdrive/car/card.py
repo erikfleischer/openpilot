@@ -221,7 +221,7 @@ class Car:
       self.pm.send('liveTracks', tracks_msg)
 
     # poke the bear
-    can_sends = self.CI.poke_the_bear()
+    can_sends = self.CI.CS.poke_the_bear()
     if can_sends is not None:
       self.pm.send('sendcan', can_list_to_can_capnp(can_sends, msgtype='sendcan', valid=CS.canValid))
 
