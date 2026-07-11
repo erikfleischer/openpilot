@@ -119,7 +119,7 @@ function install_python_deps() {
 # --- Main ---
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-  install_linux_deps
+  # install_linux_deps
   echo "[ ] installed system dependencies t=$SECONDS"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   if [[ $SHELL == "/bin/zsh" ]]; then
