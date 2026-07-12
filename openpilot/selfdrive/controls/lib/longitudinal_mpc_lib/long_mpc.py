@@ -81,6 +81,16 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
+def get_A_max_from_personality(personality=log.LongitudinalPersonality.standard):
+  if personality==log.LongitudinalPersonality.relaxed:
+    return 1.00
+  elif personality==log.LongitudinalPersonality.standard:
+    return 1.50
+  elif personality==log.LongitudinalPersonality.aggressive:
+    return 2.00
+  else:
+    raise NotImplementedError("Longitudinal personality not supported")
+
 def get_stopped_equivalence_factor(v_lead):
   return (v_lead**2) / (2 * COMFORT_BRAKE)
 
@@ -338,7 +348,7 @@ class LongitudinalMpc:
     self.solver.set(N, "yref", self.yref[N][:COST_E_DIM])
 
     self.params[:,0] = ACCEL_MIN
-    self.params[:,1] = ACCEL_MAX
+    self.params[:,1] = np.min(ACCEL_MAX, get_A_max_from_personality(personality))
     self.params[:,2] = np.min(x_obstacles, axis=1)
     self.params[:,3] = np.copy(self.a_prev)
     self.params[:,4] = t_follow
