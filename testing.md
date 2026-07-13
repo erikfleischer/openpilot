@@ -8,3 +8,9 @@
   * idea: couple max accelleration to driving personality
   * experiment with JERK filed in DAS_Control message
 
+# more testing on 12.07.2026
+  * motorcycle: shows up as lead vehicle on screen, nevertheless op tries to drive into it
+  * going up to Gornau: strang high accelleration after engaging
+  * idea: max speed depending on desired curvature
+  * not reacting in time for stopped vehicle in Waldkirchen
+
