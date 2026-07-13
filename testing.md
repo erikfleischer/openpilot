@@ -13,4 +13,7 @@
   * going up to Gornau: strang high accelleration after engaging
   * idea: max speed depending on desired curvature
   * not reacting in time for stopped vehicle in Waldkirchen
+     - analysis result: estimated lead speed has been too high
+     - idea: plaus check on speed based on change of distance
+
 
