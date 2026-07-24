@@ -56,8 +56,8 @@ FCW_IDXS = T_IDXS < 5.0
 T_DIFFS = np.diff(T_IDXS, prepend=[0.])
 COMFORT_BRAKE = 2.5
 STOP_DISTANCE = 6.0
-CRUISE_MIN_ACCEL = -1.2
-CRUISE_MAX_ACCEL = 1.6
+CRUISE_MIN_ACCEL = -1.0
+CRUISE_MAX_ACCEL = 1.4
 MIN_X_LEAD_FACTOR = 0.5
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
@@ -315,7 +315,7 @@ class LongitudinalMpc:
     v_lead_mpc = np.interp(T_IDXS, LEAD_T_IDXS_MODEL, v_lead_traj)
     return np.column_stack((x_lead_mpc, v_lead_mpc))
 
-  def update(self, modelV2, v_cruise, radarstate, personality=log.LongitudinalPersonality.standard):
+  def update(self, v_cruise, modelV2, radarstate, personality=log.LongitudinalPersonality.standard):
     t_follow = get_T_FOLLOW(personality)
     v_ego = self.x0[1]
     model_leads = modelV2.leadsV3
