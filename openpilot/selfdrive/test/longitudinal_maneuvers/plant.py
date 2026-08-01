@@ -91,7 +91,7 @@ class Plant:
     # this is to ensure lead policy is effective when model
     # does not predict slowdown
     model.modelV2.position.x = ((self.speed + 0.5) * T_IDXS).tolist()
-    model.modelV2.action.desiredAcceleration = float(self.acceleration + 0.5)
+    model.modelV2.action.desiredAcceleration = float(self.acceleration + 0.1)
     # always start at current speed
     model.modelV2.velocity.x = [float(self.speed)] + [float(self.speed + 0.5)] * (len(T_IDXS) - 1)
     model.modelV2.acceleration.x = [0.0] * len(T_IDXS)
