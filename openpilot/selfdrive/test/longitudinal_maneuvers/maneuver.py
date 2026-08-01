@@ -38,7 +38,6 @@ class Maneuver:
 
     valid = True
     logs = []
-    not_starting_t = 0.0
     while plant.current_time < self.duration:
       speed_lead = np.interp(plant.current_time, self.breakpoints, self.speed_lead_values)
       prob_lead = np.interp(plant.current_time, self.breakpoints, self.prob_lead_values)
@@ -62,13 +61,8 @@ class Maneuver:
         valid = False
 
       if self.ensure_start and log['v_rel'] > 0 and log['acceleration'] < 1e-3:
-        if not_starting_t == 0.0:
-          not_starting_t = plant.current_time
-        elif plant.current_time - not_starting_t > 0.5:
-          print('LongitudinalPlanner not starting!')
-          valid = False
-      else:
-        not_starting_t = 0.0
+        print('LongitudinalPlanner not starting!')
+        valid = False
 
     if self.force_decel and log['speed'] > 1e-1 and log['acceleration'] > -0.04:
       print('Not stopping with force decel')
