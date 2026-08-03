@@ -117,6 +117,34 @@ class Plant:
     model.modelV2.acceleration = acceleration
     model.modelV2.meta.disengagePredictions.gasPressProbs = [float(prob_throttle) for _ in range(6)]
 
+    # Lead trajectories for model-based longitudinal MPC.
+    # x/v include constant-accel extrapolation so radar-anchored deltas carry future braking.
+    ts = np.asarray(ModelConstants.LEAD_T_IDXS, dtype=np.float64)
+    v_traj = np.maximum(v_lead + a_lead * ts, 0.0)
+    # Integrate speed for relative x; when lead stops, hold position
+    x_traj = np.empty_like(ts)
+    x_traj[0] = d_rel
+    for i in range(1, len(ts)):
+      dt = ts[i] - ts[i - 1]
+      x_traj[i] = x_traj[i - 1] + 0.5 * (v_traj[i] + v_traj[i - 1]) * dt
+
+    model_leads = []
+    for i in range(2):
+      if self.only_lead2:
+        p = float(prob_lead) if i == 1 else 0.0
+      else:
+        # only_radar leads still need model prob > 0.5 for process_lead to use radar
+        p = float(prob_lead if not self.only_radar else max(prob_lead, 0.9))
+      ml = log.ModelDataV2.LeadDataV3.new_message()
+      ml.prob = p
+      ml.t = [float(t) for t in ts]
+      ml.x = [float(x) for x in x_traj]
+      ml.y = [0.0] * len(ts)
+      ml.v = [float(v) for v in v_traj]
+      ml.a = [float(a_lead)] * len(ts)
+      model_leads.append(ml)
+    model.modelV2.leadsV3 = model_leads
+
     control.controlsState.longControlState = LongCtrlState.pid if self.enabled else LongCtrlState.off
     ss.selfdriveState.experimentalMode = self.e2e
     ss.selfdriveState.personality = self.personality
