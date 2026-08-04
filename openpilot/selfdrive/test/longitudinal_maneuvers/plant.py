@@ -9,6 +9,7 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
+from openpilot.selfdrive.modeld.fill_model_msg import fill_xyz_poly
 
 
 class Plant:
@@ -63,7 +64,10 @@ class Plant:
     control = messaging.new_message('controlsState')
     ss = messaging.new_message('selfdriveState')
     car_state = messaging.new_message('carState')
+    car_control = messaging.new_message('carControl')
+    lp = messaging.new_message('vehicleParameters')
     model = messaging.new_message('modelV2')
+    driving_model = messaging.new_message('drivingModelData')
     a_lead = (v_lead - self.v_lead_prev)/self.ts
     self.v_lead_prev = v_lead
 
@@ -141,6 +145,11 @@ class Plant:
       model_leads.append(ml)
     model.modelV2.leadsV3 = model_leads
 
+    # Straight predicted path for curvature speed limiter (no-op on κ≈0)
+    z = [0.0] * len(ModelConstants.T_IDXS)
+    fill_xyz_poly(driving_model.drivingModelData.path, ModelConstants.POLY_PATH_DEGREE,
+                  model.modelV2.position.x, [0.0] * len(ModelConstants.T_IDXS), z)
+
     control.controlsState.longControlState = LongCtrlState.pid if self.enabled else LongCtrlState.off
     ss.selfdriveState.personality = self.personality
     control.controlsState.forceDecel = self.force_decel
@@ -151,9 +160,12 @@ class Plant:
     # ******** get controlsState messages for plotting ***
     sm = {'radarState': radar.radarState,
           'carState': car_state.carState,
+          'carControl': car_control.carControl,
           'controlsState': control.controlsState,
           'selfdriveState': ss.selfdriveState,
-          'modelV2': model.modelV2}
+          'vehicleParameters': lp.vehicleParameters,
+          'modelV2': model.modelV2,
+          'drivingModelData': driving_model.drivingModelData}
     self.planner.update(sm)
     self.acceleration = self.planner.output_a_target
     if self.planner.output_should_stop:
