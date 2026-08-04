@@ -118,6 +118,14 @@ def curvature_from_path_polys(x_coeffs, y_coeffs, t):
   dy = np.polynomial.polynomial.polyval(t, np.polynomial.polynomial.polyder(y_coeffs, m=1))
   ddy = np.polynomial.polynomial.polyval(t, np.polynomial.polynomial.polyder(y_coeffs, m=2))
 
+  # Curvature (kappa) of a parameterized path (x(t), y(t)) is given by:
+  #            x'(t) * y''(t) - y'(t) * x''(t)
+  # kappa(t) = -------------------------------
+  #               (x'(t)^2 + y'(t)^2)^(3/2)
+  #
+  # where x'(t) is the first derivative of x(t) with respect to t, y'(t) is the first derivative of y(t) with respect to t,
+  # x''(t) is the second derivative of x(t) with respect to t, and y''(t) is the second derivative of y(t) with respect to t.
+  # Source: https://en.wikipedia.org/wiki/Curvature#Curves_in_the_plane
   speed2 = dx * dx + dy * dy
   # Floor denominator so |ẋẏ̈-ẏẍ̈| / (ẋ²+ẏ²)^{3/2} never divides by zero
   denom = np.maximum(speed2, PATH_SPEED_EPS2) ** 1.5
@@ -127,6 +135,7 @@ def curvature_from_path_polys(x_coeffs, y_coeffs, t):
 
 def speed_limit_from_curvature(kappa, a_lat_max):
   kappa = np.maximum(np.abs(np.asarray(kappa, dtype=np.float64)), KAPPA_EPS)
+  # a_lat = v^2 * kappa
   return np.sqrt(a_lat_max / kappa)
 
 def apply_curvature_speed_limit(v_cruise_clipped, path, personality=log.LongitudinalPersonality.standard):
