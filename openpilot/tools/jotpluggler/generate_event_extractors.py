@@ -181,7 +181,7 @@ class Generator:
 
     elem_scalar = scalar_kind(elem_type)
     if elem_scalar is not None:
-      self.emit(indent, f"if ({list_expr}.size() <= 16) {{")
+      self.emit(indent, f"if ({list_expr}.size() <= 64) {{")
       index_var = self.tmp("i")
       self.emit(indent + 2, f"for (uint {index_var} = 0; {index_var} < {list_expr}.size(); ++{index_var}) {{")
       item_series = self.tmp("item_series")
