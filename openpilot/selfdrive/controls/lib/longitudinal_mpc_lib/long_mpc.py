@@ -107,6 +107,16 @@ def get_A_LAT_max_from_personality(personality=log.LongitudinalPersonality.stand
     raise NotImplementedError("Longitudinal personality not supported")
   return min(a_lat, ISO_LATERAL_ACCEL)
 
+def get_cruise_min_accel_factor(personality=log.LongitudinalPersonality.standard):
+  if personality == log.LongitudinalPersonality.relaxed:
+    return 0.5
+  elif personality == log.LongitudinalPersonality.standard:
+    return 0.75
+  elif personality == log.LongitudinalPersonality.aggressive:
+    return 1.0
+  else:
+    raise NotImplementedError("Longitudinal personality not supported")
+
 def curvature_from_path_polys(x_coeffs, y_coeffs, t):
   """Parametric curvature of a time-parameterized path (x(t), y(t))."""
   x_coeffs = np.asarray(x_coeffs, dtype=np.float64)
@@ -150,8 +160,9 @@ def apply_curvature_speed_limit(v_cruise_clipped, path, personality=log.Longitud
   v_lim = speed_limit_from_curvature(kappa, a_lat_max)
 
   # Backward-propagate so upcoming slow sections force earlier deceleration
+  cruise_min_accel = CRUISE_MIN_ACCEL * get_cruise_min_accel_factor(personality)
   for i in range(N - 1, -1, -1):
-    v_lim[i] = min(v_lim[i], v_lim[i + 1] - CRUISE_MIN_ACCEL * T_DIFFS[i + 1])
+    v_lim[i] = min(v_lim[i], v_lim[i + 1] - cruise_min_accel * T_DIFFS[i + 1])
 
   return np.minimum(v_cruise_clipped, v_lim)
 
