@@ -114,7 +114,11 @@ GlfwRuntime::GlfwRuntime(const Options &options) {
     glfwSetWindowSizeLimits(window_, options.width, options.height, options.width, options.height);
   }
   glfwMakeContextCurrent(window_);
-  glfwSwapInterval(options.show ? 1 : 0);
+  // Never block on compositor frame callbacks: on Wayland (e.g. Hyprland),
+  // SwapInterval(1) can stall forever when the window is on another monitor
+  // or not actively presented, which prevents ping replies and marks the app
+  // unresponsive. Interactive mode paces frames in the main loop instead.
+  glfwSwapInterval(0);
 }
 
 GlfwRuntime::~GlfwRuntime() {
