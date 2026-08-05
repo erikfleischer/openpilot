@@ -190,6 +190,8 @@ class LongitudinalPlanner:
     longitudinalPlan.leadTrajectoryV0 = self.mpc.lead_xv_0[:, 1].tolist()
     longitudinalPlan.leadTrajectoryX1 = self.mpc.lead_xv_1[:, 0].tolist()
     longitudinalPlan.leadTrajectoryV1 = self.mpc.lead_xv_1[:, 1].tolist()
+    longitudinalPlan.cruiseTrajectoryX = self.mpc.cruise_xv[:, 0].tolist()
+    longitudinalPlan.cruiseTrajectoryV = self.mpc.cruise_xv[:, 1].tolist()
 
     longitudinalPlan.aTarget = float(self.output_a_target)
     longitudinalPlan.shouldStop = bool(self.output_should_stop)

@@ -1224,6 +1224,11 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
   leadTrajectoryX1 @42 :List(Float32);
   leadTrajectoryV1 @43 :List(Float32);
 
+  # cruise obstacle / curvature-limited speed profile (13 points at T_IDXS)
+  # X is the fake cruise obstacle distance used by MPC; V is v_cruise after curvature limiting
+  cruiseTrajectoryX @44 :List(Float32);
+  cruiseTrajectoryV @45 :List(Float32);
+
   enum LongitudinalPlanSource {
     cruise @0;
     lead0 @1;
