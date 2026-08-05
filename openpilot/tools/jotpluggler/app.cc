@@ -1870,11 +1870,21 @@ int run(const Options &options) {
     bool captured = false;
     const auto capture_ready_at = std::chrono::steady_clock::now() + (capture_has_map ? std::chrono::milliseconds(1800)
                                                                                       : std::chrono::milliseconds(0));
+    // Cap interactive redraw rate without compositor vsync so Wayland events
+    // (including xdg_wm_base pings) keep being processed on every monitor.
+    constexpr auto kFramePeriod = std::chrono::nanoseconds(1'000'000'000 / 60);
     while (!glfwWindowShouldClose(glfw_runtime.window())) {
-      const bool capture_ready = std::chrono::steady_clock::now() >= capture_ready_at;
+      const auto frame_start = std::chrono::steady_clock::now();
+      const bool capture_ready = frame_start >= capture_ready_at;
       const fs::path *capture_path = (!captured && should_capture && capture_ready) ? &output_path : nullptr;
       render_frame(glfw_runtime.window(), &session, &ui_state, capture_path);
       captured = captured || capture_path != nullptr;
+
+      const auto elapsed = std::chrono::steady_clock::now() - frame_start;
+      if (elapsed < kFramePeriod) {
+        const double timeout_s = std::chrono::duration<double>(kFramePeriod - elapsed).count();
+        glfwWaitEventsTimeout(timeout_s);
+      }
     }
   } else {
     render_frame(glfw_runtime.window(), &session, &ui_state, nullptr);
