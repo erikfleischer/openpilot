@@ -4,37 +4,43 @@ import numpy as np
 
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.cereal import log
+from openpilot.selfdrive.modeld.constants import ModelConstants
+from openpilot.selfdrive.controls.lib.drive_helpers import MIN_SPEED
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
-  N, T_IDXS, T_DIFFS, CRUISE_MIN_ACCEL, ISO_LATERAL_ACCEL,
+  N, T_DIFFS, CRUISE_MIN_ACCEL, ISO_LATERAL_ACCEL, MODEL_T_IDXS,
   get_A_LAT_max_from_personality, get_cruise_min_accel_factor,
-  curvature_from_path_polys, speed_limit_from_curvature, apply_curvature_speed_limit,
+  curvature_from_model, speed_limit_from_curvature, apply_curvature_speed_limit,
 )
 
 
-def make_path(x_coeffs, y_coeffs):
-  return SimpleNamespace(xCoefficients=list(x_coeffs), yCoefficients=list(y_coeffs))
+def make_model(velocity_x, yaw_rate):
+  return SimpleNamespace(
+    velocity=SimpleNamespace(x=list(velocity_x)),
+    orientationRate=SimpleNamespace(z=list(yaw_rate)),
+  )
 
 
 class TestCurvatureSpeedLimiter(OpenpilotTestCase):
   def test_straight_path_does_not_reduce_cruise(self):
-    # x = 20*t, y = 0
-    path = make_path([0.0, 20.0], [0.0])
+    v = 20.0
+    model = make_model(np.full(ModelConstants.IDX_N, v), np.zeros(ModelConstants.IDX_N))
     v_cruise = np.full(N + 1, 30.0)
-    limited = apply_curvature_speed_limit(v_cruise, path, log.LongitudinalPersonality.standard)
+    limited = apply_curvature_speed_limit(v_cruise, model, log.LongitudinalPersonality.standard)
     np.testing.assert_array_equal(limited, v_cruise)
 
   def test_constant_radius_speed_limit(self):
-    # Near t=0, parabolic path y = 0.5*κ*v^2*t^2 with x = v*t has curvature κ
     kappa = 0.01  # 1/m
     v = 20.0
     a_lat = get_A_LAT_max_from_personality(log.LongitudinalPersonality.standard)
-    path = make_path([0.0, v], [0.0, 0.0, 0.5 * kappa * v * v])
+    yaw_rate = kappa * v
+    velocity_x = np.full(ModelConstants.IDX_N, v)
+    yaw_rates = np.full(ModelConstants.IDX_N, yaw_rate)
 
-    kappa_t = curvature_from_path_polys(path.xCoefficients, path.yCoefficients, np.array([0.0]))
-    np.testing.assert_allclose(kappa_t[0], kappa, rtol=1e-6)
+    kappa_t = curvature_from_model(velocity_x, yaw_rates)
+    np.testing.assert_allclose(kappa_t, kappa, rtol=1e-6)
 
     v_lim = speed_limit_from_curvature(kappa_t, a_lat)
-    np.testing.assert_allclose(v_lim[0], np.sqrt(a_lat / kappa), rtol=1e-6)
+    np.testing.assert_allclose(v_lim, np.sqrt(a_lat / kappa), rtol=1e-6)
 
   def test_personality_ordering(self):
     relaxed = get_A_LAT_max_from_personality(log.LongitudinalPersonality.relaxed)
@@ -50,14 +56,18 @@ class TestCurvatureSpeedLimiter(OpenpilotTestCase):
     assert v_relaxed[()] <= v_standard[()] <= v_aggressive[()]
 
   def test_backward_propagation_braking_lead_in(self):
-    # Soft quartic lateral path: curvature grows with t, so late horizon limits speed.
-    # Backward prop with personality-scaled CRUISE_MIN_ACCEL must keep the profile achievable.
+    # Curvature grows with time so late horizon limits speed; back-prop must keep profile achievable.
     personality = log.LongitudinalPersonality.standard
     cruise_min_accel = CRUISE_MIN_ACCEL * get_cruise_min_accel_factor(personality)
     v = 25.0
-    path = make_path([0.0, v], [0.0, 0.0, 0.0, 0.0, 0.002])
+    # κ(t) rises from ~0 to 0.04 over the model horizon
+    kappa_model = 0.04 * (MODEL_T_IDXS / MODEL_T_IDXS[-1])
+    yaw_rates = kappa_model * v
+    velocity_x = np.full(ModelConstants.IDX_N, v)
+    model = make_model(velocity_x, yaw_rates)
+
     v_cruise = np.full(N + 1, 40.0)
-    limited = apply_curvature_speed_limit(v_cruise, path, personality)
+    limited = apply_curvature_speed_limit(v_cruise, model, personality)
 
     assert np.any(limited < v_cruise)
     for i in range(N):
@@ -65,9 +75,8 @@ class TestCurvatureSpeedLimiter(OpenpilotTestCase):
       assert limited[i] <= max_from_next + 1e-6
 
     a_lat = get_A_LAT_max_from_personality(personality)
-    kappa = curvature_from_path_polys(path.xCoefficients, path.yCoefficients, T_IDXS)
+    kappa = curvature_from_model(velocity_x, yaw_rates)
     v_lim_raw = speed_limit_from_curvature(kappa, a_lat)
-    # If the end of the horizon is limited enough to require braking from t=0, cruise[0] drops
     v_needed_at_0 = v_lim_raw[-1]
     for i in range(N - 1, -1, -1):
       v_needed_at_0 = min(v_lim_raw[i], v_needed_at_0 - cruise_min_accel * T_DIFFS[i + 1])
@@ -80,35 +89,31 @@ class TestCurvatureSpeedLimiter(OpenpilotTestCase):
     aggressive = get_cruise_min_accel_factor(log.LongitudinalPersonality.aggressive)
     assert relaxed < standard < aggressive
 
-  def test_zero_path_speed_no_nans(self):
-    # Constant point path: ẋ=ẏ=0 → denominator would be zero without flooring
-    kappa = curvature_from_path_polys([5.0], [2.0], T_IDXS)
+  def test_low_speed_floor_no_nans(self):
+    # Near-zero velocity floored by MIN_SPEED; still finite curvature
+    yaw_rates = np.full(ModelConstants.IDX_N, 0.1)
+    velocity_x = np.zeros(ModelConstants.IDX_N)
+    kappa = curvature_from_model(velocity_x, yaw_rates)
     assert np.all(np.isfinite(kappa))
-    np.testing.assert_array_equal(kappa, np.zeros_like(T_IDXS))
+    np.testing.assert_allclose(kappa, 0.1 / MIN_SPEED, rtol=1e-6)
 
-    path = make_path([5.0, 0.0], [2.0, 0.0])  # zero velocity, nonzero position
+    model = make_model(velocity_x, np.zeros(ModelConstants.IDX_N))
     v_cruise = np.full(N + 1, 25.0)
-    limited = apply_curvature_speed_limit(v_cruise, path, log.LongitudinalPersonality.standard)
+    limited = apply_curvature_speed_limit(v_cruise, model, log.LongitudinalPersonality.standard)
     assert np.all(np.isfinite(limited))
     np.testing.assert_array_equal(limited, v_cruise)
 
-  def test_invalid_path_unchanged(self):
+  def test_invalid_model_unchanged(self):
     v_cruise = np.full(N + 1, 25.0)
 
-    empty = SimpleNamespace(xCoefficients=[], yCoefficients=[])
+    empty = make_model([], [])
     np.testing.assert_array_equal(
       apply_curvature_speed_limit(v_cruise, empty, log.LongitudinalPersonality.standard),
       v_cruise,
     )
 
-    short = SimpleNamespace(xCoefficients=[1.0], yCoefficients=[1.0])
+    short = make_model([1.0], [0.0])
     np.testing.assert_array_equal(
       apply_curvature_speed_limit(v_cruise, short, log.LongitudinalPersonality.standard),
-      v_cruise,
-    )
-
-    missing = SimpleNamespace()
-    np.testing.assert_array_equal(
-      apply_curvature_speed_limit(v_cruise, missing, log.LongitudinalPersonality.standard),
       v_cruise,
     )

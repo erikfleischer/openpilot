@@ -8,8 +8,10 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.common.swaglog import cloudlog
 # WARNING: imports outside of constants will not trigger a rebuild
 from openpilot.selfdrive.modeld.constants import index_function, ModelConstants
+from openpilot.selfdrive.controls.lib.drive_helpers import MIN_SPEED
 
 LEAD_T_IDXS_MODEL = np.array(ModelConstants.LEAD_T_IDXS)  # [0, 2, 4, 6, 8, 10]s
+MODEL_T_IDXS = np.array(ModelConstants.T_IDXS)
 
 if __name__ == '__main__':  # generating code
   from acados.acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
@@ -93,7 +95,6 @@ def get_A_max_from_personality(personality=log.LongitudinalPersonality.standard)
 
 # Comfort lateral accel by personality, hard-capped by ISO 11270 (3.0 m/s^2)
 ISO_LATERAL_ACCEL = 3.0
-PATH_SPEED_EPS2 = 1e-4  # (m/s)^2; below this path speed, treat curvature as 0
 KAPPA_EPS = 1e-6
 
 def get_A_LAT_max_from_personality(personality=log.LongitudinalPersonality.standard):
@@ -117,30 +118,16 @@ def get_cruise_min_accel_factor(personality=log.LongitudinalPersonality.standard
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
-def curvature_from_path_polys(x_coeffs, y_coeffs, t):
-  """Parametric curvature of a time-parameterized path (x(t), y(t))."""
-  x_coeffs = np.asarray(x_coeffs, dtype=np.float64)
-  y_coeffs = np.asarray(y_coeffs, dtype=np.float64)
-  t = np.asarray(t, dtype=np.float64)
+def curvature_from_model(velocity_x, yaw_rate, t_model=MODEL_T_IDXS, t_mpc=T_IDXS):
+  """Bicycle-model curvature κ = |ψ̇| / max(|v_x|, MIN_SPEED), interpolated to MPC times."""
+  velocity_x = np.asarray(velocity_x, dtype=np.float64)
+  yaw_rate = np.asarray(yaw_rate, dtype=np.float64)
+  if len(velocity_x) != ModelConstants.IDX_N or len(yaw_rate) != ModelConstants.IDX_N:
+    return np.zeros_like(t_mpc, dtype=np.float64)
 
-  dx = np.polynomial.polynomial.polyval(t, np.polynomial.polynomial.polyder(x_coeffs, m=1))
-  ddx = np.polynomial.polynomial.polyval(t, np.polynomial.polynomial.polyder(x_coeffs, m=2))
-  dy = np.polynomial.polynomial.polyval(t, np.polynomial.polynomial.polyder(y_coeffs, m=1))
-  ddy = np.polynomial.polynomial.polyval(t, np.polynomial.polynomial.polyder(y_coeffs, m=2))
-
-  # Curvature (kappa) of a parameterized path (x(t), y(t)) is given by:
-  #            x'(t) * y''(t) - y'(t) * x''(t)
-  # kappa(t) = -------------------------------
-  #               (x'(t)^2 + y'(t)^2)^(3/2)
-  #
-  # where x'(t) is the first derivative of x(t) with respect to t, y'(t) is the first derivative of y(t) with respect to t,
-  # x''(t) is the second derivative of x(t) with respect to t, and y''(t) is the second derivative of y(t) with respect to t.
-  # Source: https://en.wikipedia.org/wiki/Curvature#Curves_in_the_plane
-  speed2 = dx * dx + dy * dy
-  # Floor denominator so |ẋẏ̈-ẏẍ̈| / (ẋ²+ẏ²)^{3/2} never divides by zero
-  denom = np.maximum(speed2, PATH_SPEED_EPS2) ** 1.5
-  kappa = np.abs(dx * ddy - dy * ddx) / denom
-  kappa = np.where(speed2 >= PATH_SPEED_EPS2, kappa, 0.0)
+  v = np.maximum(np.abs(velocity_x), MIN_SPEED)
+  kappa_model = np.abs(yaw_rate) / v
+  kappa = np.interp(t_mpc, t_model, kappa_model)
   return np.nan_to_num(kappa, nan=0.0, posinf=0.0, neginf=0.0)
 
 def speed_limit_from_curvature(kappa, a_lat_max):
@@ -148,15 +135,14 @@ def speed_limit_from_curvature(kappa, a_lat_max):
   # a_lat = v^2 * kappa
   return np.sqrt(a_lat_max / kappa)
 
-def apply_curvature_speed_limit(v_cruise_clipped, path, personality=log.LongitudinalPersonality.standard):
-  """Tighten cruise speed profile using predicted path curvature."""
-  x_coeffs = getattr(path, 'xCoefficients', None)
-  y_coeffs = getattr(path, 'yCoefficients', None)
-  if x_coeffs is None or y_coeffs is None or len(x_coeffs) < 2 or len(y_coeffs) < 2:
+def apply_curvature_speed_limit(v_cruise_clipped, modelV2, personality=log.LongitudinalPersonality.standard):
+  """Tighten cruise speed profile using predicted modelV2 yaw rate / velocity."""
+  if (len(modelV2.velocity.x) != ModelConstants.IDX_N or
+      len(modelV2.orientationRate.z) != ModelConstants.IDX_N):
     return v_cruise_clipped
 
   a_lat_max = get_A_LAT_max_from_personality(personality)
-  kappa = curvature_from_path_polys(x_coeffs, y_coeffs, T_IDXS)
+  kappa = curvature_from_model(modelV2.velocity.x, modelV2.orientationRate.z)
   v_lim = speed_limit_from_curvature(kappa, a_lat_max)
 
   # Backward-propagate so upcoming slow sections force earlier deceleration
@@ -391,7 +377,7 @@ class LongitudinalMpc:
     v_lead_mpc = np.interp(T_IDXS, LEAD_T_IDXS_MODEL, v_lead_traj)
     return np.column_stack((x_lead_mpc, v_lead_mpc))
 
-  def update(self, v_cruise, modelV2, radarstate, path, personality=log.LongitudinalPersonality.standard):
+  def update(self, v_cruise, modelV2, radarstate, personality=log.LongitudinalPersonality.standard):
     t_follow = get_T_FOLLOW(personality)
     v_ego = self.x0[1]
     model_leads = modelV2.leadsV3
@@ -413,7 +399,7 @@ class LongitudinalMpc:
     # TODO does this make sense when max_a is negative?
     v_upper = v_ego + (T_IDXS * CRUISE_MAX_ACCEL * 1.05)
     v_cruise_clipped = np.clip(v_cruise * np.ones(N+1), v_lower, v_upper)
-    v_cruise_clipped = apply_curvature_speed_limit(v_cruise_clipped, path, personality)
+    v_cruise_clipped = apply_curvature_speed_limit(v_cruise_clipped, modelV2, personality)
     cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow)
     self.cruise_xv = np.column_stack((cruise_obstacle, v_cruise_clipped))
 
