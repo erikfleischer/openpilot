@@ -8,7 +8,6 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
-from openpilot.selfdrive.modeld.fill_model_msg import fill_xyz_poly
 
 T_IDXS = np.array(ModelConstants.T_IDXS)
 
@@ -56,7 +55,6 @@ class Plant:
     car_control = messaging.new_message('carControl')
     lp = messaging.new_message('vehicleParameters')
     model = messaging.new_message('modelV2')
-    driving_model = messaging.new_message('drivingModelData')
     a_lead = (v_lead - self.v_lead_prev)/self.ts
     self.v_lead_prev = v_lead
 
@@ -99,6 +97,8 @@ class Plant:
     # always start at current speed
     model.modelV2.velocity.x = [float(self.speed)] + [float(self.speed + 0.5)] * (len(T_IDXS) - 1)
     model.modelV2.acceleration.x = [0.0] * len(T_IDXS)
+    # Zero yaw rate so curvature speed limiter is a no-op (straight road)
+    model.modelV2.orientationRate.z = [0.0] * len(T_IDXS)
 
     # Lead trajectories for model-based longitudinal MPC.
     # x/v include constant-accel extrapolation so radar-anchored deltas carry future braking.
@@ -128,11 +128,6 @@ class Plant:
       model_leads.append(ml)
     model.modelV2.leadsV3 = model_leads
 
-    # Straight predicted path for curvature speed limiter (no-op on κ≈0)
-    z = [0.0] * len(ModelConstants.T_IDXS)
-    fill_xyz_poly(driving_model.drivingModelData.path, ModelConstants.POLY_PATH_DEGREE,
-                  model.modelV2.position.x, [0.0] * len(ModelConstants.T_IDXS), z)
-
     control.controlsState.longControlState = LongCtrlState.pid if self.enabled else LongCtrlState.off
     ss.selfdriveState.personality = self.personality
     control.controlsState.forceDecel = self.force_decel
@@ -147,8 +142,7 @@ class Plant:
           'controlsState': control.controlsState,
           'selfdriveState': ss.selfdriveState,
           'vehicleParameters': lp.vehicleParameters,
-          'modelV2': model.modelV2,
-          'drivingModelData': driving_model.drivingModelData}
+          'modelV2': model.modelV2}
     self.planner.update(sm)
     self.acceleration = self.planner.output_a_target
     if self.planner.output_should_stop:
