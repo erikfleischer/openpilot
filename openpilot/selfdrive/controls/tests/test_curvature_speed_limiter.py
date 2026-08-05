@@ -6,8 +6,8 @@ from openpilot.common.test import OpenpilotTestCase
 from openpilot.cereal import log
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
   N, T_IDXS, T_DIFFS, CRUISE_MIN_ACCEL, ISO_LATERAL_ACCEL,
-  get_A_LAT_max_from_personality, curvature_from_path_polys,
-  speed_limit_from_curvature, apply_curvature_speed_limit,
+  get_A_LAT_max_from_personality, get_cruise_min_accel_factor,
+  curvature_from_path_polys, speed_limit_from_curvature, apply_curvature_speed_limit,
 )
 
 
@@ -51,26 +51,34 @@ class TestCurvatureSpeedLimiter(OpenpilotTestCase):
 
   def test_backward_propagation_braking_lead_in(self):
     # Soft quartic lateral path: curvature grows with t, so late horizon limits speed.
-    # Backward prop with CRUISE_MIN_ACCEL must keep the profile achievable.
+    # Backward prop with personality-scaled CRUISE_MIN_ACCEL must keep the profile achievable.
+    personality = log.LongitudinalPersonality.standard
+    cruise_min_accel = CRUISE_MIN_ACCEL * get_cruise_min_accel_factor(personality)
     v = 25.0
     path = make_path([0.0, v], [0.0, 0.0, 0.0, 0.0, 0.002])
     v_cruise = np.full(N + 1, 40.0)
-    limited = apply_curvature_speed_limit(v_cruise, path, log.LongitudinalPersonality.standard)
+    limited = apply_curvature_speed_limit(v_cruise, path, personality)
 
     assert np.any(limited < v_cruise)
     for i in range(N):
-      max_from_next = limited[i + 1] - CRUISE_MIN_ACCEL * T_DIFFS[i + 1]
+      max_from_next = limited[i + 1] - cruise_min_accel * T_DIFFS[i + 1]
       assert limited[i] <= max_from_next + 1e-6
 
-    a_lat = get_A_LAT_max_from_personality(log.LongitudinalPersonality.standard)
+    a_lat = get_A_LAT_max_from_personality(personality)
     kappa = curvature_from_path_polys(path.xCoefficients, path.yCoefficients, T_IDXS)
     v_lim_raw = speed_limit_from_curvature(kappa, a_lat)
     # If the end of the horizon is limited enough to require braking from t=0, cruise[0] drops
     v_needed_at_0 = v_lim_raw[-1]
     for i in range(N - 1, -1, -1):
-      v_needed_at_0 = min(v_lim_raw[i], v_needed_at_0 - CRUISE_MIN_ACCEL * T_DIFFS[i + 1])
+      v_needed_at_0 = min(v_lim_raw[i], v_needed_at_0 - cruise_min_accel * T_DIFFS[i + 1])
     if v_needed_at_0 < v_cruise[0]:
       assert limited[0] < v_cruise[0]
+
+  def test_cruise_min_accel_factor_ordering(self):
+    relaxed = get_cruise_min_accel_factor(log.LongitudinalPersonality.relaxed)
+    standard = get_cruise_min_accel_factor(log.LongitudinalPersonality.standard)
+    aggressive = get_cruise_min_accel_factor(log.LongitudinalPersonality.aggressive)
+    assert relaxed < standard < aggressive
 
   def test_zero_path_speed_no_nans(self):
     # Constant point path: ẋ=ẏ=0 → denominator would be zero without flooring
