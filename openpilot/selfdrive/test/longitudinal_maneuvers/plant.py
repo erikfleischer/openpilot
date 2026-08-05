@@ -9,7 +9,6 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
-from openpilot.selfdrive.modeld.fill_model_msg import fill_xyz_poly
 
 
 class Plant:
@@ -68,7 +67,6 @@ class Plant:
     lp = messaging.new_message('liveParameters')
     car_control = messaging.new_message('carControl')
     model = messaging.new_message('modelV2')
-    driving_model = messaging.new_message('drivingModelData')
     a_lead = (v_lead - self.v_lead_prev)/self.ts
     self.v_lead_prev = v_lead
 
@@ -117,6 +115,10 @@ class Plant:
     acceleration = log.XYZTData.new_message()
     acceleration.x = [float(x) for x in np.zeros_like(ModelConstants.T_IDXS)]
     model.modelV2.acceleration = acceleration
+    # Zero yaw rate so curvature speed limiter is a no-op (straight road)
+    orientation_rate = log.XYZTData.new_message()
+    orientation_rate.z = [0.0] * len(ModelConstants.T_IDXS)
+    model.modelV2.orientationRate = orientation_rate
     model.modelV2.meta.disengagePredictions.gasPressProbs = [float(prob_throttle) for _ in range(6)]
 
     # Lead trajectories for model-based longitudinal MPC.
@@ -147,11 +149,6 @@ class Plant:
       model_leads.append(ml)
     model.modelV2.leadsV3 = model_leads
 
-    # Straight predicted path for curvature speed limiter (no-op on κ≈0)
-    z = [0.0] * len(ModelConstants.T_IDXS)
-    fill_xyz_poly(driving_model.drivingModelData.path, ModelConstants.POLY_PATH_DEGREE,
-                  model.modelV2.position.x, [0.0] * len(ModelConstants.T_IDXS), z)
-
     control.controlsState.longControlState = LongCtrlState.pid if self.enabled else LongCtrlState.off
     ss.selfdriveState.experimentalMode = self.e2e
     ss.selfdriveState.personality = self.personality
@@ -168,8 +165,7 @@ class Plant:
           'controlsState': control.controlsState,
           'selfdriveState': ss.selfdriveState,
           'liveParameters': lp.liveParameters,
-          'modelV2': model.modelV2,
-          'drivingModelData': driving_model.drivingModelData}
+          'modelV2': model.modelV2}
     self.planner.update(sm)
     self.acceleration = self.planner.output_a_target
     if self.planner.output_should_stop:
