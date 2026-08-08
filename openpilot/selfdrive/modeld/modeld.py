@@ -42,7 +42,7 @@ BIG_MODEL_TIMEOUT = 60
 
 
 def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
-                          lat_action_t: float, long_action_t: float, v_ego: float) -> log.ModelDataV2.Action:
+                          lat_action_t: float, long_action_t: float, v_ego: float) -> tuple[log.ModelDataV2.Action, float]:
   if 'action' not in model_output:
     plan = model_output['plan'][0]
     desired_accel = get_accel_from_plan(plan[:,Plan.VELOCITY][:,0],
@@ -58,15 +58,17 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
     desired_accel = model_output['action'][0,1]
     desired_curvature = model_output['action'][0,0] / (max(1.0, v_ego))**2
   stop = should_stop(v_ego, desired_accel)
+  unfiltered_desired_accel = float(desired_accel)
   desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
   if v_ego > MIN_LAT_CONTROL_SPEED:
     desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_SECONDS)
   else:
     desired_curvature = prev_action.desiredCurvature
 
-  return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
-                                desiredAcceleration=float(desired_accel),
-                                shouldStop=bool(stop))
+  action = log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
+                                  desiredAcceleration=float(desired_accel),
+                                  shouldStop=bool(stop))
+  return action, unfiltered_desired_accel
 
 
 class ChestnutState:
@@ -271,7 +273,7 @@ def main(demo=False):
   cloudlog.warning(f"models loaded in {time.monotonic() - st:.1f}s, modeld starting")
 
   # messaging
-  pub_socks = ["modelV2", "drivingModelData", "cameraOdometry"] + (["chestnutState"] if USBGPU else [])
+  pub_socks = ["modelV2", "drivingModelData", "cameraOdometry", "modelDebug"] + (["chestnutState"] if USBGPU else [])
   pm = PubMaster(pub_socks)
   sm = SubMaster(["deviceState", "carState", "narrowRoadCameraState", "extrinsicsCalibration", "driverMonitoringState", "carControl", "lateralDelay"])
 
@@ -405,7 +407,7 @@ def main(demo=False):
       drivingdata_send = messaging.new_message('drivingModelData')
       posenet_send = messaging.new_message('cameraOdometry')
 
-      action = get_action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego)
+      action, unfiltered_desired_accel = get_action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego)
       prev_action = action
       fill_model_msg(modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
@@ -422,9 +424,15 @@ def main(demo=False):
 
       fill_driving_model_data(drivingdata_send, modelv2_send)
       fill_pose_msg(posenet_send, model_output, meta_main.frame_id, vipc_dropped_frames, meta_main.timestamp_eof, extrinsics_calibration_seen)
+
+      modeldebug_send = messaging.new_message('modelDebug')
+      modeldebug_send.valid = modelv2_send.valid
+      modeldebug_send.modelDebug.unfilteredDesiredAcceleration = unfiltered_desired_accel
+
       pm.send('modelV2', modelv2_send)
       pm.send('drivingModelData', drivingdata_send)
       pm.send('cameraOdometry', posenet_send)
+      pm.send('modelDebug', modeldebug_send)
     last_vipc_frame_id = meta_main.frame_id
 
     if chestnut_state is not None and run_count % round(ModelConstants.MODEL_RUN_FREQ / SERVICE_LIST['chestnutState'].frequency) == 0:
