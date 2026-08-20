@@ -11,3 +11,8 @@
   * add previews for both 2nd order and 4th order filter to jotPluggler which are applied
     to modelDebug/unfilteredDesiredAcceleration. Assume the filters are executed at 100 Hz
     sampling frequency.
+
+# implementation notes
+  * do not touch implementation filter in modeld.py → disable via setting
+    output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
+  * add 2nd order bessel filter with a calibratable corner frequency to LongitudinalPlanner:update() to filter. Initially set the corner frequency to 2 Hz.
