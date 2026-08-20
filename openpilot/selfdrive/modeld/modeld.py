@@ -18,7 +18,7 @@ from msgq.visionipc import VisionIpcClient, VisionBuf
 from opendbc.car.car_helpers import get_demo_car_params
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.params import Params
-from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.common.filter_simple import FirstOrderFilter, SecondOrderBesselFilter
 from openpilot.common.realtime import config_realtime_process, DT_MDL
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
@@ -36,13 +36,15 @@ PROCESS_NAME = "openpilot.selfdrive.modeld.modeld"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
 LAT_SMOOTH_SECONDS = 0.0
-LONG_SMOOTH_SECONDS = 0.0
+LONG_SMOOTH_SECONDS = 0.3
+LONG_ACCEL_BESSEL_FC_HZ = 2.0
 MIN_LAT_CONTROL_SPEED = 0.3
 BIG_MODEL_TIMEOUT = 60
 
 
 def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
-                          lat_action_t: float, long_action_t: float, v_ego: float) -> tuple[log.ModelDataV2.Action, float]:
+                          lat_action_t: float, long_action_t: float, v_ego: float,
+                          prev_fo_accel: float, accel_bessel: SecondOrderBesselFilter) -> tuple[log.ModelDataV2.Action, float, float]:
   if 'action' not in model_output:
     plan = model_output['plan'][0]
     desired_accel = get_accel_from_plan(plan[:,Plan.VELOCITY][:,0],
@@ -59,7 +61,8 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
     desired_curvature = model_output['action'][0,0] / (max(1.0, v_ego))**2
   stop = should_stop(v_ego, desired_accel)
   unfiltered_desired_accel = float(desired_accel)
-  desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
+  fo_desired_accel = float(smooth_value(unfiltered_desired_accel, prev_fo_accel, LONG_SMOOTH_SECONDS))
+  desired_accel = accel_bessel.update(unfiltered_desired_accel)
   if v_ego > MIN_LAT_CONTROL_SPEED:
     desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_SECONDS)
   else:
@@ -68,7 +71,7 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
   action = log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
                                   desiredAcceleration=float(desired_accel),
                                   shouldStop=bool(stop))
-  return action, unfiltered_desired_accel
+  return action, unfiltered_desired_accel, fo_desired_accel
 
 
 class ChestnutState:
@@ -304,6 +307,8 @@ def main(demo=False):
   # TODO Move smooth seconds to action function
   long_delay = CP.longitudinalActuatorDelay + LONG_SMOOTH_SECONDS
   prev_action = log.ModelDataV2.Action()
+  prev_fo_accel = 0.0
+  accel_bessel = SecondOrderBesselFilter(0.0, LONG_ACCEL_BESSEL_FC_HZ, DT_MDL)
 
   DH = DesireHelper()
 
@@ -407,8 +412,10 @@ def main(demo=False):
       drivingdata_send = messaging.new_message('drivingModelData')
       posenet_send = messaging.new_message('cameraOdometry')
 
-      action, unfiltered_desired_accel = get_action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego)
+      action, unfiltered_desired_accel, fo_desired_accel = get_action_from_model(
+        model_output, prev_action, lat_action_t, long_action_t, v_ego, prev_fo_accel, accel_bessel)
       prev_action = action
+      prev_fo_accel = fo_desired_accel
       fill_model_msg(modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
                      frame_drop_ratio, meta_main.timestamp_eof, model_execution_time, extrinsics_calibration_seen)
@@ -428,6 +435,7 @@ def main(demo=False):
       modeldebug_send = messaging.new_message('modelDebug')
       modeldebug_send.valid = modelv2_send.valid
       modeldebug_send.modelDebug.unfilteredDesiredAcceleration = unfiltered_desired_accel
+      modeldebug_send.modelDebug.firstOrderDesiredAcceleration = fo_desired_accel
 
       pm.send('modelV2', modelv2_send)
       pm.send('drivingModelData', drivingdata_send)
