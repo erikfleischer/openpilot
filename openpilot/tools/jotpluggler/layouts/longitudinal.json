@@ -1,1 +1,137 @@
-{"current_tab_index":0,"tabs":[{"name":"tab1","root":{"split":"vertical","sizes":[0.250401,0.249599,0.250401,0.249599],"children":[{"title":"...","range":{"left":104.907277,"right":126.285782,"top":1.391623,"bottom":-2.563614},"curves":[{"name":"/carState/aEgo","color":"#f14cc1"},{"name":"/longitudinalPlan/accels/0","color":"#9467bd"},{"name":"/carControl/actuators/accel","color":"#17becf"},{"name":"/carOutput/actuatorsOutput/accel","color":"#d62728"}]},{"title":"...","range":{"left":104.907277,"right":126.285782,"top":1.18496,"bottom":-1.811222},"curves":[{"name":"/controlsState/upAccelCmd","color":"#1f77b4"},{"name":"/controlsState/uiAccelCmd","color":"#d62728"},{"name":"/controlsState/ufAccelCmd","color":"#1ac938"}]},{"title":"...","range":{"left":104.907277,"right":126.285782,"top":15.862889,"bottom":-0.568809},"curves":[{"name":"/carState/vEgo","color":"#1ac938"},{"name":"/longitudinalPlan/speeds/0","color":"#ff7f0e"}]},{"title":"...","range":{"left":104.907277,"right":126.285782,"top":1.025,"bottom":-0.025},"curves":[{"name":"/carControl/longActive","color":"#1f77b4"},{"name":"/carState/gasPressed","color":"#d62728"}]}]}}]}
+{
+  "current_tab_index": 0,
+  "tabs": [
+    {
+      "name": "tab1",
+      "root": {
+        "children": [
+          {
+            "curves": [
+              {
+                "color": "#f14cc1",
+                "name": "/carState/aEgo"
+              },
+              {
+                "color": "#9467bd",
+                "name": "/longitudinalPlan/accels/0"
+              },
+              {
+                "color": "#17becf",
+                "name": "/carControl/actuators/accel"
+              },
+              {
+                "color": "#d62728",
+                "name": "/carOutput/actuatorsOutput/accel"
+              },
+              {
+                "color": "#7b61ff",
+                "name": "/modelV2/action/desiredAcceleration"
+              },
+              {
+                "name": "/modelDebug/unfilteredDesiredAcceleration",
+                "color": "#7f7f7f"
+              },
+              {
+                "name": "fo100",
+                "color": "#c5b0d5",
+                "custom_python": {
+                  "linked_source": "/modelDebug/unfilteredDesiredAcceleration",
+                  "additional_sources": [],
+                  "globals_code": "FS = 100.0\nTAU = 0.3\nALPHA = 1.0 - np.exp(-1.0 / (FS * TAU))\n",
+                  "function_code": "t_out = np.arange(time[0], time[-1], 1.0 / FS)\nif t_out.size < 2:\n    return time, value\nx = np.interp(t_out, time, value)\ny = np.empty_like(x)\nprev = x[0]\nfor i in range(x.size):\n    prev = ALPHA * x[i] + (1.0 - ALPHA) * prev\n    y[i] = prev\nreturn t_out, y\n"
+                }
+              },
+              {
+                "name": "bessel2",
+                "color": "#ff7f0e",
+                "custom_python": {
+                  "linked_source": "/modelDebug/unfilteredDesiredAcceleration",
+                  "additional_sources": [],
+                  "globals_code": "FS = 100.0\nSOS = np.array([[0.011625475478757493, 0.023250950957514987, 0.011625475478757493, 1.0, -1.6154130644415605, 0.6619149663565905]])\n\ndef sosfilt_df2(sos, x):\n    y = np.asarray(x, dtype=np.float64).copy()\n    for b0, b1, b2, a0, a1, a2 in sos:\n        inv = 1.0 / a0\n        b0, b1, b2 = b0 * inv, b1 * inv, b2 * inv\n        a1, a2 = a1 * inv, a2 * inv\n        w1 = 0.0\n        w2 = 0.0\n        out = np.empty_like(y)\n        for i in range(y.size):\n            w0 = y[i] - a1 * w1 - a2 * w2\n            out[i] = b0 * w0 + b1 * w1 + b2 * w2\n            w2 = w1\n            w1 = w0\n        y = out\n    return y\n",
+                  "function_code": "t_out = np.arange(time[0], time[-1], 1.0 / FS)\nif t_out.size < 2:\n    return time, value\nx = np.interp(t_out, time, value)\nreturn t_out, sosfilt_df2(SOS, x)\n"
+                }
+              },
+              {
+                "name": "bessel4",
+                "color": "#2ca02c",
+                "custom_python": {
+                  "linked_source": "/modelDebug/unfilteredDesiredAcceleration",
+                  "additional_sources": [],
+                  "globals_code": "FS = 100.0\nSOS = np.array([[0.0033491489645522837, 0.006698297929104567, 0.0033491489645522837, 1.0, -1.1325093548566092, 0.3306861708327107], [1.0, 2.0, 1.0, 1.0, -1.201807030733092, 0.47220386382833457]])\n\ndef sosfilt_df2(sos, x):\n    y = np.asarray(x, dtype=np.float64).copy()\n    for b0, b1, b2, a0, a1, a2 in sos:\n        inv = 1.0 / a0\n        b0, b1, b2 = b0 * inv, b1 * inv, b2 * inv\n        a1, a2 = a1 * inv, a2 * inv\n        w1 = 0.0\n        w2 = 0.0\n        out = np.empty_like(y)\n        for i in range(y.size):\n            w0 = y[i] - a1 * w1 - a2 * w2\n            out[i] = b0 * w0 + b1 * w1 + b2 * w2\n            w2 = w1\n            w1 = w0\n        y = out\n    return y\n",
+                  "function_code": "t_out = np.arange(time[0], time[-1], 1.0 / FS)\nif t_out.size < 2:\n    return time, value\nx = np.interp(t_out, time, value)\nreturn t_out, sosfilt_df2(SOS, x)\n"
+                }
+              }
+            ],
+            "title": "accel: aEgo / plan / actuators / desired / unfiltered / fo100 / bessel2 / bessel4",
+            "range": {
+              "left": 60.0,
+              "right": 85.0,
+              "bottom": -2.0,
+              "top": 2.2
+            }
+          },
+          {
+            "curves": [
+              {
+                "color": "#1ac938",
+                "name": "/carState/vEgo"
+              },
+              {
+                "color": "#ff7f0e",
+                "name": "/longitudinalPlan/speeds/0"
+              }
+            ],
+            "title": "...",
+            "range": {
+              "left": 60.0,
+              "right": 85.0,
+              "bottom": -2.0,
+              "top": 2.2
+            }
+          },
+          {
+            "curves": [
+              {
+                "color": "#1f77b4",
+                "name": "/carControl/longActive"
+              },
+              {
+                "color": "#d62728",
+                "name": "/carState/gasPressed"
+              }
+            ],
+            "title": "..."
+          },
+          {
+            "curves": [
+              {
+                "color": "#236bb4",
+                "name": "/modelV2/meta/disengagePredictions/brake3MetersPerSecondSquaredProbs/0"
+              },
+              {
+                "color": "#dc5234",
+                "name": "/modelV2/meta/disengagePredictions/brake4MetersPerSecondSquaredProbs/0"
+              },
+              {
+                "color": "#43a047",
+                "name": "/modelV2/meta/disengagePredictions/brakePressProbs/0"
+              },
+              {
+                "color": "#f39c12",
+                "name": "/modelV2/meta/disengagePredictions/gasDisengageProbs/0"
+              }
+            ],
+            "title": "..."
+          }
+        ],
+        "sizes": [
+          0.25,
+          0.25,
+          0.25,
+          0.25
+        ],
+        "split": "vertical"
+      }
+    }
+  ]
+}
