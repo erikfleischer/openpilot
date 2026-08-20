@@ -12,6 +12,7 @@ $Cxx.namespace("cereal");
 
 struct ModelDebug @0x81c2f05a394cf4af {
   unfilteredDesiredAcceleration @0 :Float32;
+  firstOrderDesiredAcceleration @1 :Float32;
 }
 
 struct CustomReserved1 @0xaedffd8f31e7b55d {
