@@ -36,3 +36,8 @@ class TestSecondOrderBesselFilter(OpenpilotTestCase):
     self.filt.reset(-0.5)
     assert self.filt.x == -0.5
     assert abs(self.filt.update(-0.5) + 0.5) < 1e-12
+
+  def test_nan_input_keeps_state(self):
+    self.filt.reset(0.5)
+    assert self.filt.update(float("nan")) == 0.5
+    assert math.isfinite(self.filt.update(0.5))

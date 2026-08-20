@@ -193,8 +193,8 @@ class ModelState:
       **{k: self.input_queues[k] for k in POLICY_INPUTS if k in self.input_queues}, warped=warped
     )
     model_output = outs.numpy()[0]
-    if self.usbgpu and not np.all(np.isfinite(model_output)):
-      # TODO remove with prev_feat
+    if not np.all(np.isfinite(model_output)):
+      # NaNs in prev_feat persist across frames and show up as posenetInvalid (speed error nan)
       cloudlog.error("model output not finite, dropping frame")
       return None
     outputs_dict = self.parser.parse_outputs(self.slice_outputs(model_output, self.output_slices))

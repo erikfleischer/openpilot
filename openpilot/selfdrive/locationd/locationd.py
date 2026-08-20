@@ -165,12 +165,15 @@ class LocationEstimator:
 
       rot_device = np.matmul(self.device_from_calib, np.array(msg.rot))
       trans_device = np.matmul(self.device_from_calib, np.array(msg.trans))
+      rot_calib_std = np.array(msg.rotStd)
+      trans_calib_std = np.array(msg.transStd)
+
+      if not (np.isfinite(rot_device).all() and np.isfinite(trans_device).all() and
+              np.isfinite(rot_calib_std).all() and np.isfinite(trans_calib_std).all()):
+        return HandleLogResult.INPUT_INVALID
 
       if np.linalg.norm(rot_device) > ROTATION_SANITY_CHECK or np.linalg.norm(trans_device) > TRANS_SANITY_CHECK:
         return HandleLogResult.INPUT_INVALID
-
-      rot_calib_std = np.array(msg.rotStd)
-      trans_calib_std = np.array(msg.transStd)
 
       if rot_calib_std.min() <= MIN_STD_SANITY_CHECK or trans_calib_std.min() <= MIN_STD_SANITY_CHECK:
         return HandleLogResult.INPUT_INVALID

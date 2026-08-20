@@ -75,6 +75,8 @@ class SecondOrderBesselFilter:
 
   def update(self, x):
     x = float(x)
+    if not math.isfinite(x):
+      return self.x
     w0 = x - self.a1 * self._w1 - self.a2 * self._w2
     y = self.b0 * w0 + self.b1 * self._w1 + self.b2 * self._w2
     self._w2 = self._w1
