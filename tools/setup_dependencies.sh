@@ -54,7 +54,7 @@ function install_linux_deps() {
   elif command -v yum > /dev/null 2>&1; then
     $SUDO yum install -y ca-certificates gcc gcc-c++ make curl libcurl-devel glibc-langpack-en git
   elif command -v pacman > /dev/null 2>&1; then
-    $SUDO pacman -Syu --noconfirm --needed base-devel ca-certificates curl git
+    $SUDO pacman -Syu --noconfirm --needed base-devel ca-certificates curl git git-lfs
   elif command -v zypper > /dev/null 2>&1; then
     $SUDO zypper --non-interactive refresh
     $SUDO zypper --non-interactive install ca-certificates gcc gcc-c++ make curl libcurl-devel glibc-locale git
