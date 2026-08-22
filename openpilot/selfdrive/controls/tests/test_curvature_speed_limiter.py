@@ -7,8 +7,8 @@ from openpilot.cereal import log
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.drive_helpers import MIN_SPEED
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
-  N, T_DIFFS, CRUISE_MIN_ACCEL, ISO_LATERAL_ACCEL, MODEL_T_IDXS,
-  get_A_LAT_max_from_personality, get_cruise_min_accel_factor,
+  N, T_IDXS, T_DIFFS, CRUISE_MIN_ACCEL, ISO_LATERAL_ACCEL, MODEL_T_IDXS,
+  CURVATURE_LIMIT_LEAD_TIME, get_A_LAT_max_from_personality, get_cruise_min_accel_factor,
   curvature_from_model, speed_limit_from_curvature, apply_curvature_speed_limit,
 )
 
@@ -82,6 +82,36 @@ class TestCurvatureSpeedLimiter(OpenpilotTestCase):
       v_needed_at_0 = min(v_lim_raw[i], v_needed_at_0 - cruise_min_accel * T_DIFFS[i + 1])
     if v_needed_at_0 < v_cruise[0]:
       assert limited[0] < v_cruise[0]
+
+  def test_lead_time_applies_late_horizon_limits_earlier(self):
+    # Late-horizon curve: accel back-prop is feasible, then 1s look-ahead pulls it earlier.
+    personality = log.LongitudinalPersonality.standard
+    cruise_min_accel = CRUISE_MIN_ACCEL * get_cruise_min_accel_factor(personality)
+    v = 25.0
+    kappa_model = np.where(MODEL_T_IDXS >= 5.0, 0.04, 1e-6)
+    yaw_rates = kappa_model * v
+    velocity_x = np.full(ModelConstants.IDX_N, v)
+    model = make_model(velocity_x, yaw_rates)
+
+    v_cruise = np.full(N + 1, 40.0)
+    limited = apply_curvature_speed_limit(v_cruise, model, personality)
+
+    a_lat = get_A_LAT_max_from_personality(personality)
+    kappa = curvature_from_model(velocity_x, yaw_rates)
+    v_lim_accel_only = speed_limit_from_curvature(kappa, a_lat)
+    for i in range(N - 1, -1, -1):
+      v_lim_accel_only[i] = min(v_lim_accel_only[i], v_lim_accel_only[i + 1] - cruise_min_accel * T_DIFFS[i + 1])
+    v_lim_accel_only = np.minimum(v_cruise, v_lim_accel_only)
+
+    v_lim_lead = np.interp(T_IDXS + CURVATURE_LIMIT_LEAD_TIME, T_IDXS, v_lim_accel_only)
+    expected = np.minimum(v_lim_accel_only, v_lim_lead)
+    np.testing.assert_allclose(limited, expected, atol=1e-6)
+    assert np.all(limited <= v_lim_lead + 1e-6)
+    assert np.any(limited < v_lim_accel_only - 1e-6)
+
+    for i in range(N):
+      max_from_next = limited[i + 1] - cruise_min_accel * T_DIFFS[i + 1]
+      assert limited[i] <= max_from_next + 1e-5
 
   def test_cruise_min_accel_factor_ordering(self):
     relaxed = get_cruise_min_accel_factor(log.LongitudinalPersonality.relaxed)
