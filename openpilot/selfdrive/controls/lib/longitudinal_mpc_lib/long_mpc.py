@@ -96,6 +96,8 @@ def get_A_max_from_personality(personality=log.LongitudinalPersonality.standard)
 # Comfort lateral accel by personality, hard-capped by ISO 11270 (3.0 m/s^2)
 ISO_LATERAL_ACCEL = 3.0
 KAPPA_EPS = 1e-6
+# Extra look-ahead so the cruise set-point leads vEgo tracking lag
+CURVATURE_LIMIT_LEAD_TIME = 1.0
 
 def get_A_LAT_max_from_personality(personality=log.LongitudinalPersonality.standard):
   if personality == log.LongitudinalPersonality.relaxed:
@@ -149,6 +151,9 @@ def apply_curvature_speed_limit(v_cruise_clipped, modelV2, personality=log.Longi
   cruise_min_accel = CRUISE_MIN_ACCEL * get_cruise_min_accel_factor(personality)
   for i in range(N - 1, -1, -1):
     v_lim[i] = min(v_lim[i], v_lim[i + 1] - cruise_min_accel * T_DIFFS[i + 1])
+
+  # Additional time shift: vEgo lags the set-point, so apply future limits earlier
+  v_lim = np.minimum(v_lim, np.interp(T_IDXS + CURVATURE_LIMIT_LEAD_TIME, T_IDXS, v_lim))
 
   return np.minimum(v_cruise_clipped, v_lim)
 
