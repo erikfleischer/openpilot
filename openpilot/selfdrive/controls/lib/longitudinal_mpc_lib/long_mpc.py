@@ -93,22 +93,22 @@ def get_A_max_from_personality(personality=log.LongitudinalPersonality.standard)
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
-# Comfort lateral accel by personality, hard-capped by ISO 11270 (3.0 m/s^2)
+# Comfort total accel by personality, hard-capped by ISO 11270 (3.0 m/s^2)
 ISO_LATERAL_ACCEL = 3.0
 KAPPA_EPS = 1e-6
 # Extra look-ahead so the cruise set-point leads vEgo tracking lag
 CURVATURE_LIMIT_LEAD_TIME = 1.0
 
-def get_A_LAT_max_from_personality(personality=log.LongitudinalPersonality.standard):
+def get_A_TOTAL_max_from_personality(personality=log.LongitudinalPersonality.standard):
   if personality == log.LongitudinalPersonality.relaxed:
-    a_lat = 1.5
+    a_total = 1.5
   elif personality == log.LongitudinalPersonality.standard:
-    a_lat = 2.0
+    a_total = 2.0
   elif personality == log.LongitudinalPersonality.aggressive:
-    a_lat = 2.5
+    a_total = 2.5
   else:
     raise NotImplementedError("Longitudinal personality not supported")
-  return min(a_lat, ISO_LATERAL_ACCEL)
+  return min(a_total, ISO_LATERAL_ACCEL)
 
 def get_cruise_min_accel_factor(personality=log.LongitudinalPersonality.standard):
   if personality == log.LongitudinalPersonality.relaxed:
@@ -137,20 +137,32 @@ def speed_limit_from_curvature(kappa, a_lat_max):
   # a_lat = v^2 * kappa
   return np.sqrt(a_lat_max / kappa)
 
+def back_propagate_speed_limit(v_lim, cruise_min_accel):
+  v_lim = np.array(v_lim, dtype=np.float64, copy=True)
+  for i in range(N - 1, -1, -1):
+    v_lim[i] = min(v_lim[i], v_lim[i + 1] - cruise_min_accel * T_DIFFS[i + 1])
+  return v_lim
+
 def apply_curvature_speed_limit(v_cruise_clipped, modelV2, personality=log.LongitudinalPersonality.standard):
   """Tighten cruise speed profile using predicted modelV2 yaw rate / velocity."""
   if (len(modelV2.velocity.x) != ModelConstants.IDX_N or
       len(modelV2.orientationRate.z) != ModelConstants.IDX_N):
     return v_cruise_clipped
 
-  a_lat_max = get_A_LAT_max_from_personality(personality)
+  a_total_max = get_A_TOTAL_max_from_personality(personality)
   kappa = curvature_from_model(modelV2.velocity.x, modelV2.orientationRate.z)
-  v_lim = speed_limit_from_curvature(kappa, a_lat_max)
-
-  # Backward-propagate so upcoming slow sections force earlier deceleration
   cruise_min_accel = CRUISE_MIN_ACCEL * get_cruise_min_accel_factor(personality)
-  for i in range(N - 1, -1, -1):
-    v_lim[i] = min(v_lim[i], v_lim[i + 1] - cruise_min_accel * T_DIFFS[i + 1])
+
+  v_lim = speed_limit_from_curvature(kappa, a_total_max)
+  v_lim = back_propagate_speed_limit(v_lim, cruise_min_accel)
+
+  # Reduce lateral budget by this profile's braking so total accel stays within a_total_max
+  a_long = np.zeros_like(v_lim)
+  a_long[:-1] = (v_lim[1:] - v_lim[:-1]) / T_DIFFS[1:]
+  a_brake = np.clip(a_long, cruise_min_accel, 0.0)
+  a_lat_allowed = np.sqrt(np.maximum(a_total_max**2 - a_brake**2, 0.0))
+  v_lim = np.minimum(v_lim, speed_limit_from_curvature(kappa, a_lat_allowed))
+  v_lim = back_propagate_speed_limit(v_lim, cruise_min_accel)
 
   # Additional time shift: vEgo lags the set-point, so apply future limits earlier
   v_lim = np.minimum(v_lim, np.interp(T_IDXS + CURVATURE_LIMIT_LEAD_TIME, T_IDXS, v_lim))
