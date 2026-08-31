@@ -2,7 +2,8 @@
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.common.params import Params
 from openpilot.system.hardware.power_monitoring import PowerMonitoring, CAR_BATTERY_CAPACITY_uWh, \
-                                                CAR_CHARGING_RATE_W, VBATT_PAUSE_CHARGING, DELAY_SHUTDOWN_TIME_S
+                                                CAR_CHARGING_RATE_W, VBATT_PAUSE_CHARGING, DELAY_SHUTDOWN_TIME_S, \
+                                                VOLTAGE_SHUTDOWN_DELAY_S
 
 # Create fake time
 ssb = 0.
@@ -18,6 +19,7 @@ def set_mock_time(value):
 TEST_DURATION_S = 50
 GOOD_VOLTAGE = 12 * 1e3
 VOLTAGE_BELOW_PAUSE_CHARGING = (VBATT_PAUSE_CHARGING - 1) * 1e3
+USB_C_VOLTAGE = 5 * 1e3
 
 def pm_patch(mocker, name, value, constant=False):
   if constant:
@@ -28,6 +30,8 @@ def pm_patch(mocker, name, value, constant=False):
 
 class TestPowerMonitoring(OpenpilotTestCase):
   def setup_method(self):
+    global ssb
+    ssb = 0.
     self._fixture("mocker").patch("time.monotonic", mock_time_monotonic)
     self.params = Params()
 
@@ -116,23 +120,45 @@ class TestPowerMonitoring(OpenpilotTestCase):
     assert pm.should_shutdown(ignition, True, start_time, False)
 
   def test_car_voltage(self, mocker):
-    POWER_DRAW = 0 # To stop shutting down for other reasons
-    TEST_TIME = 350
-    VOLTAGE_SHUTDOWN_MIN_OFFROAD_TIME_S = 50
-    pm_patch(mocker, "VOLTAGE_SHUTDOWN_MIN_OFFROAD_TIME_S", VOLTAGE_SHUTDOWN_MIN_OFFROAD_TIME_S, constant=True)
+    POWER_DRAW = 0  # To stop shutting down for other reasons
     pm_patch(mocker, "HARDWARE.get_current_power_draw", POWER_DRAW)
     pm = PowerMonitoring()
     pm.car_battery_capacity_uWh = CAR_BATTERY_CAPACITY_uWh
+    pm.car_voltage_mV = VOLTAGE_BELOW_PAUSE_CHARGING
     ignition = False
-    start_time = ssb
-    for i in range(TEST_TIME):
-      pm.calculate(VOLTAGE_BELOW_PAUSE_CHARGING, ignition)
-      if i % 10 == 0:
-        assert pm.should_shutdown(ignition, True, start_time, True) == \
-                          (pm.car_voltage_mV < VBATT_PAUSE_CHARGING * 1e3 and \
-                          (ssb - start_time) > VOLTAGE_SHUTDOWN_MIN_OFFROAD_TIME_S and \
-                            (ssb - start_time) > DELAY_SHUTDOWN_TIME_S)
-    assert pm.should_shutdown(ignition, True, start_time, True)
+    in_car = True
+    off_ts = ssb
+
+    pm.calculate(VOLTAGE_BELOW_PAUSE_CHARGING, ignition, in_car)
+    armed_at = pm._low_voltage_since
+    assert armed_at is not None
+    assert not pm.should_shutdown(ignition, in_car, off_ts, True)
+
+    set_mock_time(armed_at + VOLTAGE_SHUTDOWN_DELAY_S - 2)
+    assert not pm.should_shutdown(ignition, in_car, off_ts, True)
+
+    # LV shutdown is not gated by the 5 min DELAY_SHUTDOWN_TIME_S floor
+    assert (ssb - off_ts) < DELAY_SHUTDOWN_TIME_S
+    set_mock_time(armed_at + VOLTAGE_SHUTDOWN_DELAY_S - 1)
+    assert pm.should_shutdown(ignition, in_car, off_ts, True)
+
+  def test_car_voltage_recovers_before_delay(self, mocker):
+    POWER_DRAW = 0
+    pm_patch(mocker, "HARDWARE.get_current_power_draw", POWER_DRAW)
+    pm = PowerMonitoring()
+    pm.car_battery_capacity_uWh = CAR_BATTERY_CAPACITY_uWh
+    pm.car_voltage_mV = VOLTAGE_BELOW_PAUSE_CHARGING
+    off_ts = ssb
+
+    pm.calculate(VOLTAGE_BELOW_PAUSE_CHARGING, False, True)
+    assert pm._low_voltage_since is not None
+
+    pm.car_voltage_mV = GOOD_VOLTAGE
+    pm.calculate(GOOD_VOLTAGE, False, True)
+    assert pm._low_voltage_since is None
+
+    set_mock_time(off_ts + VOLTAGE_SHUTDOWN_DELAY_S + 10)
+    assert not pm.should_shutdown(False, True, off_ts, True)
 
   # Test to check policy of not stopping charging when DisablePowerDown is set
   def test_disable_power_down(self, mocker):
@@ -173,9 +199,11 @@ class TestPowerMonitoring(OpenpilotTestCase):
 
     ignition = False
     for i in range(TEST_TIME):
-      pm.calculate(VOLTAGE_BELOW_PAUSE_CHARGING, ignition)
+      pm.calculate(VOLTAGE_BELOW_PAUSE_CHARGING, ignition, False)
       if i % 10 == 0:
         assert not pm.should_shutdown(ignition, False, ssb, False)
+        assert pm._low_voltage_since is None
+        assert self.params.get("CarBatteryOffroadMinVoltageMv") is None
     assert not pm.should_shutdown(ignition, False, ssb, False)
 
   def test_delay_shutdown_time(self):
@@ -185,7 +213,7 @@ class TestPowerMonitoring(OpenpilotTestCase):
     in_car = True
     offroad_timestamp = ssb
     started_seen = True
-    pm.calculate(VOLTAGE_BELOW_PAUSE_CHARGING, ignition)
+    pm.calculate(GOOD_VOLTAGE, ignition)
 
     set_mock_time(offroad_timestamp + DELAY_SHUTDOWN_TIME_S - 1)
     assert not pm.should_shutdown(ignition, in_car, offroad_timestamp, started_seen), \
@@ -195,3 +223,87 @@ class TestPowerMonitoring(OpenpilotTestCase):
                                        offroad_timestamp,
                                        started_seen), \
                     f"Should shutdown after {DELAY_SHUTDOWN_TIME_S} seconds offroad time"
+
+  def test_min_voltage_tracking(self, mocker):
+    pm_patch(mocker, "HARDWARE.get_current_power_draw", 0)
+    pm = PowerMonitoring()
+    pm.car_battery_capacity_uWh = CAR_BATTERY_CAPACITY_uWh
+
+    pm.calculate(12.5e3, False, True)
+    pm.calculate(12.2e3, False, True)
+    pm.calculate(11.5e3, False, True)
+    pm.calculate(11.9e3, False, True)
+
+    assert pm.get_offroad_min_voltage_mV() == 11500
+    assert self.params.get("CarBatteryOffroadMinVoltageMv") == 11500
+    assert pm.low_voltage_diagnostic_text() == "11.5"
+
+  def test_min_voltage_not_persisted_when_healthy(self, mocker):
+    pm_patch(mocker, "HARDWARE.get_current_power_draw", 0)
+    pm = PowerMonitoring()
+    pm.car_battery_capacity_uWh = CAR_BATTERY_CAPACITY_uWh
+
+    pm.calculate(GOOD_VOLTAGE, False, True)
+    pm.calculate(12.1e3, False, True)
+
+    assert pm.get_offroad_min_voltage_mV() == 12000
+    assert self.params.get("CarBatteryOffroadMinVoltageMv") is None
+    assert pm.low_voltage_diagnostic_text() is None
+
+  def test_ignition_clears_healthy_min(self, mocker):
+    pm_patch(mocker, "HARDWARE.get_current_power_draw", 0)
+    pm = PowerMonitoring()
+    pm.car_battery_capacity_uWh = CAR_BATTERY_CAPACITY_uWh
+
+    pm.calculate(GOOD_VOLTAGE, False, True)
+    assert pm.get_offroad_min_voltage_mV() == int(GOOD_VOLTAGE)
+
+    pm.calculate(GOOD_VOLTAGE, True, True)
+    assert pm.get_offroad_min_voltage_mV() is None
+    assert self.params.get("CarBatteryOffroadMinVoltageMv") is None
+
+  def test_ignition_keeps_low_min(self, mocker):
+    pm_patch(mocker, "HARDWARE.get_current_power_draw", 0)
+    pm = PowerMonitoring()
+    pm.car_battery_capacity_uWh = CAR_BATTERY_CAPACITY_uWh
+
+    pm.calculate(11.5e3, False, True)
+    assert self.params.get("CarBatteryOffroadMinVoltageMv") == 11500
+
+    pm.calculate(GOOD_VOLTAGE, True, True)
+    assert pm._offroad_min_voltage_mV is None
+    assert self.params.get("CarBatteryOffroadMinVoltageMv") == 11500
+    assert pm.get_offroad_min_voltage_mV() == 11500
+    assert pm.low_voltage_diagnostic_text() == "11.5"
+
+  def test_firehose_usb_c_does_not_trigger_diagnostic(self, mocker):
+    pm_patch(mocker, "HARDWARE.get_current_power_draw", 0)
+    pm = PowerMonitoring()
+    pm.car_battery_capacity_uWh = CAR_BATTERY_CAPACITY_uWh
+    pm.car_voltage_mV = USB_C_VOLTAGE
+    off_ts = ssb
+
+    for _ in range(60):
+      pm.calculate(USB_C_VOLTAGE, False, False)
+
+    assert pm._low_voltage_since is None
+    assert pm.get_offroad_min_voltage_mV() is None
+    assert self.params.get("CarBatteryOffroadMinVoltageMv") is None
+    assert pm.low_voltage_diagnostic_text() is None
+    assert not pm.should_shutdown(False, False, off_ts, True)
+
+  def test_firehose_does_not_overwrite_in_car_diagnostic(self, mocker):
+    pm_patch(mocker, "HARDWARE.get_current_power_draw", 0)
+    pm = PowerMonitoring()
+    pm.car_battery_capacity_uWh = CAR_BATTERY_CAPACITY_uWh
+
+    pm.calculate(11.5e3, False, True)
+    assert self.params.get("CarBatteryOffroadMinVoltageMv") == 11500
+
+    pm.car_voltage_mV = USB_C_VOLTAGE
+    pm.calculate(USB_C_VOLTAGE, False, False)
+
+    assert pm._low_voltage_since is None
+    assert self.params.get("CarBatteryOffroadMinVoltageMv") == 11500
+    assert pm.get_offroad_min_voltage_mV() == 11500
+    assert pm.low_voltage_diagnostic_text() == "11.5"
