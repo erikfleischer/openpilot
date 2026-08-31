@@ -411,7 +411,7 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     # Offroad power monitoring
     voltage = None if peripheralState.pandaType == log.PandaState.PandaType.unknown else peripheralState.voltage
-    power_monitor.calculate(voltage, onroad_conditions["ignition"])
+    power_monitor.calculate(voltage, onroad_conditions["ignition"], in_car)
     msg.deviceState.offroadPowerUsageUwh = power_monitor.get_power_used()
     msg.deviceState.carBatteryCapacityUwh = max(0, power_monitor.get_car_battery_capacity())
     current_power_draw = HARDWARE.get_current_power_draw()
@@ -420,8 +420,12 @@ def hardware_thread(end_event, hw_queue) -> None:
     som_power_draw = HARDWARE.get_som_power_draw()
     msg.deviceState.somPowerDrawW = som_power_draw
 
+    extra_text = power_monitor.low_voltage_diagnostic_text()
+    set_offroad_alert_if_changed("Offroad_LowVoltage", extra_text is not None, extra_text=extra_text)
+
     # Check if we need to shut down
     if power_monitor.should_shutdown(onroad_conditions["ignition"], in_car, off_ts, started_seen):
+      power_monitor.save_offroad_min_voltage(force=True)
       cloudlog.warning(f"shutting device down, offroad since {off_ts}")
       params.put_bool("DoShutdown", True, block=True)
 
