@@ -34,12 +34,6 @@ class PowerMonitoring:
     self._offroad_min_voltage_mV: float | None = None
     self._last_min_voltage_save_time = 0
 
-    # Continue the last offroad session across reboot so a recovered 12V
-    # reading doesn't hide the diagnostic from the previous park.
-    persisted_min = self.params.get("CarBatteryOffroadMinVoltageMv")
-    if persisted_min is not None and persisted_min < VBATT_PAUSE_CHARGING_mV:
-      self._offroad_min_voltage_mV = float(persisted_min)
-
     car_battery_capacity_uWh = self.params.get("CarBatteryCapacity") or 0
 
     # Reset capacity if it's low
@@ -146,10 +140,9 @@ class PowerMonitoring:
     self._last_min_voltage_save_time = now
 
   def get_offroad_min_voltage_mV(self) -> int | None:
-    live = int(self._offroad_min_voltage_mV) if self._offroad_min_voltage_mV is not None else None
-    persisted = self.params.get("CarBatteryOffroadMinVoltageMv")
-    values = [v for v in (live, persisted) if v is not None]
-    return min(values) if values else None
+    if self._offroad_min_voltage_mV is not None:
+      return int(self._offroad_min_voltage_mV)
+    return self.params.get("CarBatteryOffroadMinVoltageMv")
 
   def low_voltage_diagnostic_text(self) -> str | None:
     min_v = self.get_offroad_min_voltage_mV()
