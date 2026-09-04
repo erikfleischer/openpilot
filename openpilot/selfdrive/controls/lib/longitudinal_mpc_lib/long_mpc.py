@@ -87,9 +87,9 @@ def get_A_max_from_personality(personality=log.LongitudinalPersonality.standard)
   if personality==log.LongitudinalPersonality.relaxed:
     return 1.00
   elif personality==log.LongitudinalPersonality.standard:
-    return 1.50
+    return 1.25
   elif personality==log.LongitudinalPersonality.aggressive:
-    return 2.00
+    return 1.50
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
