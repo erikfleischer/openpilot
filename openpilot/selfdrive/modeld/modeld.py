@@ -44,6 +44,7 @@ from openpilot.selfdrive.modeld.helpers import MODELS_DIR, chestnut_present, che
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
 LAT_SMOOTH_SECONDS = 0.0
+LAT_SMOOTH_EXTRA_SECONDS = 0.3
 LONG_SMOOTH_SECONDS = 0.3
 MIN_LAT_CONTROL_SPEED = 0.3
 BIG_MODEL_TIMEOUT = 60
@@ -68,7 +69,7 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
   stop = should_stop(v_ego, desired_accel)
   desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
   if v_ego > MIN_LAT_CONTROL_SPEED:
-    desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_SECONDS)
+    desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_EXTRA_SECONDS)
   else:
     desired_curvature = prev_action.desiredCurvature
 
