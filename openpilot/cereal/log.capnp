@@ -1246,15 +1246,15 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
   solverExecutionTime @35 :Float32;
 
   # lead trajectories the MPC solved against (13 points at T_IDXS)
-  leadTrajectoryX0 @40 :List(Float32);
-  leadTrajectoryV0 @41 :List(Float32);
-  leadTrajectoryX1 @42 :List(Float32);
-  leadTrajectoryV1 @43 :List(Float32);
+  leadTrajectoryX0 @41 :List(Float32);
+  leadTrajectoryV0 @42 :List(Float32);
+  leadTrajectoryX1 @43 :List(Float32);
+  leadTrajectoryV1 @44 :List(Float32);
 
   # cruise obstacle / curvature-limited speed profile (13 points at T_IDXS)
   # X is the fake cruise obstacle distance used by MPC; V is v_cruise after curvature limiting
-  cruiseTrajectoryX @44 :List(Float32);
-  cruiseTrajectoryV @45 :List(Float32);
+  cruiseTrajectoryX @45 :List(Float32);
+  cruiseTrajectoryV @46 :List(Float32);
 
   enum LongitudinalPlanSource {
     cruise @0;
