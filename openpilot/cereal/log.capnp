@@ -1245,17 +1245,6 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
 
   solverExecutionTime @35 :Float32;
 
-  # lead trajectories the MPC solved against (13 points at T_IDXS)
-  leadTrajectoryX0 @41 :List(Float32);
-  leadTrajectoryV0 @42 :List(Float32);
-  leadTrajectoryX1 @43 :List(Float32);
-  leadTrajectoryV1 @44 :List(Float32);
-
-  # cruise obstacle / curvature-limited speed profile (13 points at T_IDXS)
-  # X is the fake cruise obstacle distance used by MPC; V is v_cruise after curvature limiting
-  cruiseTrajectoryX @45 :List(Float32);
-  cruiseTrajectoryV @46 :List(Float32);
-
   enum LongitudinalPlanSource {
     cruise @0;
     lead0 @1;
@@ -2649,7 +2638,7 @@ struct Event {
     # DO change the name of the field and struct
     # DON'T change the ID (e.g. @107)
     # DON'T change which struct it points to
-    customReserved0 @107 :Custom.CustomReserved0;
+    longitudinalMpcObstacles @107 :Custom.LongitudinalMpcObstacles;
     customReserved1 @108 :Custom.CustomReserved1;
     customReserved2 @109 :Custom.CustomReserved2;
     customReserved3 @110 :Custom.CustomReserved3;
