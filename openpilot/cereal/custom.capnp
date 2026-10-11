@@ -10,7 +10,17 @@ $Cxx.namespace("cereal");
 # DO rename the structs
 # DON'T change the identifier (e.g. @0x81c2f05a394cf4af)
 
-struct CustomReserved0 @0x81c2f05a394cf4af {
+struct LongitudinalMpcObstacles @0x81c2f05a394cf4af {
+  # lead trajectories the MPC solved against (13 points at T_IDXS)
+  leadTrajectoryX0 @0 :List(Float32);
+  leadTrajectoryV0 @1 :List(Float32);
+  leadTrajectoryX1 @2 :List(Float32);
+  leadTrajectoryV1 @3 :List(Float32);
+
+  # cruise obstacle / curvature-limited speed profile (13 points at T_IDXS)
+  # X is the fake cruise obstacle distance used by MPC; V is v_cruise after curvature limiting
+  cruiseTrajectoryX @4 :List(Float32);
+  cruiseTrajectoryV @5 :List(Float32);
 }
 
 struct CustomReserved1 @0xaedffd8f31e7b55d {

@@ -190,13 +190,6 @@ class LongitudinalPlanner:
     longitudinalPlan.longitudinalPlanSource = self.mpc.source
     longitudinalPlan.fcw = self.fcw
 
-    longitudinalPlan.leadTrajectoryX0 = self.mpc.lead_xv_0[:, 0].tolist()
-    longitudinalPlan.leadTrajectoryV0 = self.mpc.lead_xv_0[:, 1].tolist()
-    longitudinalPlan.leadTrajectoryX1 = self.mpc.lead_xv_1[:, 0].tolist()
-    longitudinalPlan.leadTrajectoryV1 = self.mpc.lead_xv_1[:, 1].tolist()
-    longitudinalPlan.cruiseTrajectoryX = self.mpc.cruise_xv[:, 0].tolist()
-    longitudinalPlan.cruiseTrajectoryV = self.mpc.cruise_xv[:, 1].tolist()
-
     longitudinalPlan.aTarget = float(self.output_a_target)
     longitudinalPlan.accelBoost = float(self.accel_boost.total_boost)
     longitudinalPlan.shouldStop = bool(self.output_should_stop)
@@ -204,3 +197,15 @@ class LongitudinalPlanner:
     longitudinalPlan.allowThrottle = bool(self.allow_throttle)
 
     pm.send('longitudinalPlan', plan_send)
+
+    obstacles_send = messaging.new_message('longitudinalMpcObstacles')
+    obstacles_send.valid = plan_send.valid
+    obstacles_send.logMonoTime = plan_send.logMonoTime
+    obstacles = obstacles_send.longitudinalMpcObstacles
+    obstacles.leadTrajectoryX0 = self.mpc.lead_xv_0[:, 0].tolist()
+    obstacles.leadTrajectoryV0 = self.mpc.lead_xv_0[:, 1].tolist()
+    obstacles.leadTrajectoryX1 = self.mpc.lead_xv_1[:, 0].tolist()
+    obstacles.leadTrajectoryV1 = self.mpc.lead_xv_1[:, 1].tolist()
+    obstacles.cruiseTrajectoryX = self.mpc.cruise_xv[:, 0].tolist()
+    obstacles.cruiseTrajectoryV = self.mpc.cruise_xv[:, 1].tolist()
+    pm.send('longitudinalMpcObstacles', obstacles_send)
