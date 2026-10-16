@@ -28,6 +28,15 @@ from msgq.visionipc import VisionIpcServer
 FRAMERATE = 20
 DEMO_ROUTE, DEMO_START, DEMO_END = '5beb9b58bd12b691/0000010a--a51155e496', 90, 105
 
+# Stock Autopilot DAS_control on the autopilot party bus. Openpilot sends its own copy on bus 0.
+DAS_CONTROL_ADDR = 697
+AP_PARTY_BUS = 2
+DAS_ACCEL_SNA = 511
+DAS_SET_SPEED_SNA = 4095
+KPH_TO_MS = 1.0 / 3.6
+ACCEL_BAR_MIN = -4.0
+ACCEL_BAR_MAX = 3.0
+
 logger = logging.getLogger('clip')
 
 
@@ -82,6 +91,60 @@ def _download_segment(path: str) -> bytes:
     return bytes(f.read())
 
 
+def _das_signal(raw: int, start: int, length: int) -> int:
+  return (raw >> start) & ((1 << length) - 1)
+
+
+def decode_das_control(dat) -> tuple[float, float, float] | None:
+  """Return (setSpeed kph, accelMin, accelMax). SNA on any field drops the frame."""
+  raw_bytes = bytes(dat)
+  # accelMax occupies bits 44-52, so the payload must cover byte 6.
+  if len(raw_bytes) < 7:
+    return None
+  raw = int.from_bytes(raw_bytes[:8], 'little')
+  set_speed = _das_signal(raw, 0, 12)
+  accel_min = _das_signal(raw, 35, 9)
+  accel_max = _das_signal(raw, 44, 9)
+  if set_speed == DAS_SET_SPEED_SNA or accel_min == DAS_ACCEL_SNA or accel_max == DAS_ACCEL_SNA:
+    return None
+  return set_speed * 0.1, accel_min * 0.04 - 15.0, accel_max * 0.04 - 15.0
+
+
+def das_control_from_can(msg) -> tuple[float, float, float] | None:
+  latest = None
+  if msg.which() != 'can':
+    return None
+  for frame in msg.can:
+    if frame.address == DAS_CONTROL_ADDR and frame.src == AP_PARTY_BUS:
+      decoded = decode_das_control(frame.dat)
+      if decoded is not None:
+        latest = decoded
+  return latest
+
+
+def ap_accel_from_das(das_control: tuple[float, float, float] | None, v_ego: float | None) -> float | None:
+  """Below vEgo the min edge is active; above vEgo the max edge is active."""
+  if das_control is None or v_ego is None:
+    return None
+  set_speed_kph, accel_min, accel_max = das_control
+  set_speed = set_speed_kph * KPH_TO_MS
+  if set_speed < v_ego:
+    return accel_min
+  if set_speed > v_ego:
+    return accel_max
+  return 0.0
+
+
+def _carry_das_control(chunks: list[dict]) -> None:
+  last = None
+  for chunk in chunks:
+    value = chunk.get('_dasControl')
+    if value is None:
+      chunk['_dasControl'] = last
+    else:
+      last = value
+
+
 def _parse_and_chunk_segment(args: tuple) -> list[dict]:
   raw_data, fps = args
   from openpilot.tools.lib.logreader import _LogFileReader
@@ -90,12 +153,21 @@ def _parse_and_chunk_segment(args: tuple) -> list[dict]:
     return []
 
   dt_ns, chunks, current, next_time = 1e9 / fps, [], {}, messages[0].logMonoTime + 1e9 / fps
+  das_control = None
   for msg in messages:
     if msg.logMonoTime >= next_time:
+      current['_dasControl'] = das_control
       chunks.append(current)
       current, next_time = {}, next_time + dt_ns * ((msg.logMonoTime - next_time) // dt_ns + 1)
+      das_control = None
+    sample = das_control_from_can(msg)
+    if sample is not None:
+      das_control = sample
     current[msg.which()] = msg
-  return chunks + [current] if current else chunks
+  if current:
+    current['_dasControl'] = das_control
+    chunks.append(current)
+  return chunks
 
 
 def load_logs_parallel(log_paths: list[str], fps: int = 20) -> list[dict]:
@@ -108,7 +180,9 @@ def load_logs_parallel(log_paths: list[str], fps: int = 20) -> list[dict]:
 
   logger.info("Parsing and chunking segments...")
   with multiprocessing.Pool(num_workers) as pool:
-    return list(itertools.chain.from_iterable(pool.map(_parse_and_chunk_segment, [(raw_data[i], fps) for i in range(len(log_paths))])))
+    chunks = list(itertools.chain.from_iterable(pool.map(_parse_and_chunk_segment, [(raw_data[i], fps) for i in range(len(log_paths))])))
+  _carry_das_control(chunks)
+  return chunks
 
 
 def patch_submaster(message_chunks, ui_state):
@@ -245,7 +319,64 @@ def draw_text_box(text, x, y, size, gui_app, font, color=None, center=False):
   rl.draw_text_ex(font, text, rl.Vector2(x, y), size, 0, text_color)
 
 
-def render_overlays(gui_app, font, big, metadata, title, start_time, frame_idx, show_metadata, show_time):
+def _accel_sample(sm, service: str, getter):
+  if not sm.seen[service]:
+    return None
+  return float(getter())
+
+
+def _draw_accel_bars(gui_app, font, das_control):
+  import pyray as rl
+  from openpilot.selfdrive.ui.ui_state import ui_state
+  from openpilot.system.ui.lib.text_measure import measure_text_cached
+
+  sm = ui_state.sm
+  v_ego = _accel_sample(sm, "carState", lambda: sm["carState"].vEgo)
+  series = [
+    ("model", _accel_sample(sm, "modelV2", lambda: sm["modelV2"].action.desiredAcceleration), rl.Color(80, 160, 255, 230)),
+    ("openpilot", _accel_sample(sm, "carControl", lambda: sm["carControl"].actuators.accel), rl.Color(128, 216, 166, 230)),
+    ("AP", ap_accel_from_das(das_control, v_ego), rl.Color(255, 170, 60, 230)),
+    ("actual", _accel_sample(sm, "carState", lambda: sm["carState"].aEgo), rl.Color(230, 230, 230, 230)),
+  ]
+
+  # Left third of the big frame. Tracks stay at most one third of that region's height,
+  # and sit under the set-speed box (y=45, height=204).
+  left_width = gui_app.width // 3
+  track_h = gui_app.height // 3
+  value_size, label_size = 28, 22
+  bar_w = 36
+  label_w = max(int(measure_text_cached(font, label, label_size).x) for label, _, _ in series)
+  column_w = max(bar_w + 16, label_w + 12)
+  group_w = column_w * len(series)
+  origin_x = max(40, (left_width - group_w) // 2)
+  value_h = int(measure_text_cached(font, "0.0", value_size).y)
+  origin_y = 45 + 204 + 28
+  track_top = origin_y + value_h + 8
+  span = ACCEL_BAR_MAX - ACCEL_BAR_MIN
+
+  def y_for(accel: float) -> int:
+    clipped = min(max(accel, ACCEL_BAR_MIN), ACCEL_BAR_MAX)
+    return int(track_top + (ACCEL_BAR_MAX - clipped) / span * track_h)
+
+  zero_y = y_for(0.0)
+  rl.draw_rectangle(origin_x - 8, track_top, group_w + 16, track_h, rl.Color(0, 0, 0, 90))
+  rl.draw_line(origin_x, zero_y, origin_x + group_w, zero_y, rl.Color(255, 255, 255, 160))
+
+  for i, (label, value, color) in enumerate(series):
+    column_x = origin_x + i * column_w
+    bar_x = column_x + (column_w - bar_w) // 2
+    text = "--" if value is None else f"{value:.1f}"
+    text_w = int(measure_text_cached(font, text, value_size).x)
+    rl.draw_text_ex(font, text, rl.Vector2(column_x + (column_w - text_w) / 2, origin_y), value_size, 0, rl.WHITE)
+    if value is not None:
+      bar_y = y_for(value)
+      top, bottom = min(bar_y, zero_y), max(bar_y, zero_y)
+      rl.draw_rectangle(bar_x, top, bar_w, max(bottom - top, 2), color)
+    label_w = int(measure_text_cached(font, label, label_size).x)
+    rl.draw_text_ex(font, label, rl.Vector2(column_x + (column_w - label_w) / 2, track_top + track_h + 8), label_size, 0, rl.WHITE)
+
+
+def render_overlays(gui_app, font, big, metadata, title, start_time, frame_idx, show_metadata, show_time, das_control=None):
   from openpilot.system.ui.lib.text_measure import measure_text_cached
   from openpilot.system.ui.lib.wrap_text import wrap_text
   metadata_size = 16 if big else 12
@@ -280,6 +411,9 @@ def render_overlays(gui_app, font, big, metadata, title, start_time, frame_idx, 
   # Title overlay
   if title:
     draw_text_box(title, 0, 60, title_size, gui_app, font, center=True)
+
+  if big:
+    _draw_accel_bars(gui_app, font, das_control)
 
 
 def clip(route: Route, output: str, start: int, end: int, headless: bool = True, big: bool = False,
@@ -346,7 +480,8 @@ def clip(route: Route, output: str, start: int, end: int, headless: bool = True,
         ui_state.update()
         if should_render:
           road_view.render()
-          render_overlays(gui_app, font, big, metadata, title, start, frame_idx, show_metadata, show_time)
+          das_control = message_chunks[frame_idx].get('_dasControl')
+          render_overlays(gui_app, font, big, metadata, title, start, frame_idx, show_metadata, show_time, das_control)
         frame_idx += 1
         pbar.update(1)
     timer.lap("render")
