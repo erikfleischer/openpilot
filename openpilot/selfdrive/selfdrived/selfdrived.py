@@ -72,7 +72,7 @@ class SelfdriveD:
     self.big_model_ready_t = 0.
 
     # Setup sockets
-    self.pm = messaging.PubMaster(['selfdriveState', 'onroadEvents'])
+    self.pm = messaging.PubMaster(['selfdriveState', 'experimentalMode', 'onroadEvents'])
 
     self.gps_location_service = get_gps_location_service(self.params)
     self.gps_packets = [self.gps_location_service]
@@ -533,7 +533,6 @@ class SelfdriveD:
     ss.active = self.active
     ss.state = self.state_machine.state
     ss.engageable = not self.events.contains(ET.NO_ENTRY)
-    ss.experimentalMode = self.experimental_mode
     ss.personality = self.personality
 
     ss.alertText1 = self.AM.current_alert.alert_text_1
@@ -545,6 +544,12 @@ class SelfdriveD:
     ss.alertHudVisual = self.AM.current_alert.visual_alert
 
     self.pm.send('selfdriveState', ss_msg)
+
+    mode_send = messaging.new_message('experimentalMode')
+    mode_send.valid = ss_msg.valid
+    mode_send.logMonoTime = ss_msg.logMonoTime
+    mode_send.experimentalMode.enabled = self.experimental_mode
+    self.pm.send('experimentalMode', mode_send)
 
     # onroadEvents - logged every second or on change
     if (self.sm.frame % int(1. / DT_CTRL) == 0) or (self.events.names != self.events_prev):

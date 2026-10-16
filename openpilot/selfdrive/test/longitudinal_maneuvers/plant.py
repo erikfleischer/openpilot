@@ -66,6 +66,7 @@ class Plant:
     car_control = messaging.new_message('carControl')
     lp = messaging.new_message('vehicleParameters')
     model = messaging.new_message('modelV2')
+    experimental_mode = messaging.new_message('experimentalMode')
     a_lead = (v_lead - self.v_lead_prev)/self.ts
     self.v_lead_prev = v_lead
 
@@ -160,6 +161,7 @@ class Plant:
           'carControl': car_control.carControl,
           'controlsState': control.controlsState,
           'selfdriveState': ss.selfdriveState,
+          'experimentalMode': experimental_mode.experimentalMode,
           'vehicleParameters': lp.vehicleParameters,
           'modelV2': model.modelV2}
     self.planner.update(sm)

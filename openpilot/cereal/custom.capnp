@@ -23,7 +23,9 @@ struct LongitudinalMpcObstacles @0x81c2f05a394cf4af {
   cruiseTrajectoryV @5 :List(Float32);
 }
 
-struct CustomReserved1 @0xaedffd8f31e7b55d {
+struct ExperimentalMode @0xaedffd8f31e7b55d {
+  # mode actually used by longitudinal planning; false is chill
+  enabled @0 :Bool;
 }
 
 struct CustomReserved2 @0xf35cc4560bbf6ec2 {

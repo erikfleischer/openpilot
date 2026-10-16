@@ -29,7 +29,7 @@ class ExpButton(Widget):
 
   def _update_state(self) -> None:
     selfdrive_state = ui_state.sm["selfdriveState"]
-    self._experimental_mode = selfdrive_state.experimentalMode
+    self._experimental_mode = ui_state.sm["experimentalMode"].enabled
     self._engageable = selfdrive_state.engageable or selfdrive_state.enabled
 
   def _handle_mouse_release(self, _):

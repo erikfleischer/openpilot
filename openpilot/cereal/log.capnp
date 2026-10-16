@@ -822,7 +822,6 @@ struct SelfdriveState {
   alertHudVisual @12 :Car.CarControl.HUDControl.VisualAlert;
 
   # configurable driving settings
-  experimentalMode @10 :Bool;
   personality @11 :LongitudinalPersonality;
 
   enum AudibleAlert {
@@ -866,6 +865,7 @@ struct SelfdriveState {
 
   deprecated :group {
     alertSound @8 :Car.CarControl.HUDControl.AudibleAlert;
+    experimentalMode @10 :Bool;
   }
 }
 
@@ -2639,7 +2639,7 @@ struct Event {
     # DON'T change the ID (e.g. @107)
     # DON'T change which struct it points to
     longitudinalMpcObstacles @107 :Custom.LongitudinalMpcObstacles;
-    customReserved1 @108 :Custom.CustomReserved1;
+    experimentalMode @108 :Custom.ExperimentalMode;
     customReserved2 @109 :Custom.CustomReserved2;
     customReserved3 @110 :Custom.CustomReserved3;
     customReserved4 @111 :Custom.CustomReserved4;

@@ -162,7 +162,7 @@ class LongitudinalPlanner:
     # Cruise is an obstacle inside the MPC, so the MPC accel is already cruise-limited.
     # Experimental mode lets the model acceleration compete with that plan. Chill uses the MPC alone.
     output_a_target_e2e = self.accel_boost.update(sm, output_a_target_e2e, output_a_target_mpc, output_a_target_mpc)
-    if sm['selfdriveState'].experimentalMode:
+    if sm['experimentalMode'].enabled:
       output_a_target = min(output_a_target_e2e, output_a_target_mpc)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
       if output_a_target < output_a_target_mpc:

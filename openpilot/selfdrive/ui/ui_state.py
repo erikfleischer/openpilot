@@ -63,6 +63,7 @@ class UIState:
         "wideRoadCameraState",
         "managerState",
         "selfdriveState",
+        "experimentalMode",
         "longitudinalPlan",
         "gpsLocationExternal",
         "gpsLocation",
