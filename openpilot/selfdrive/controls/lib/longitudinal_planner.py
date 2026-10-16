@@ -160,12 +160,16 @@ class LongitudinalPlanner:
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
     # Cruise is an obstacle inside the MPC, so the MPC accel is already cruise-limited.
-    # Chill mode is gone upstream, so model acceleration always competes with the MPC.
+    # Experimental mode lets the model acceleration compete with that plan. Chill uses the MPC alone.
     output_a_target_e2e = self.accel_boost.update(sm, output_a_target_e2e, output_a_target_mpc, output_a_target_mpc)
-    output_a_target = min(output_a_target_e2e, output_a_target_mpc)
-    self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
-    if output_a_target < output_a_target_mpc:
-      self.mpc.source = LongitudinalPlanSource.e2e
+    if sm['selfdriveState'].experimentalMode:
+      output_a_target = min(output_a_target_e2e, output_a_target_mpc)
+      self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
+      if output_a_target < output_a_target_mpc:
+        self.mpc.source = LongitudinalPlanSource.e2e
+    else:
+      output_a_target = output_a_target_mpc
+      self.output_should_stop = output_should_stop_mpc
 
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
