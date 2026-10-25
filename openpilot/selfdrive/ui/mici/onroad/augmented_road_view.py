@@ -14,7 +14,7 @@ from openpilot.selfdrive.ui.mici.onroad.navigation import NavigationPanel, PANEL
 from openpilot.selfdrive.ui.mici.onroad.confidence_ball import ConfidenceBall
 from openpilot.selfdrive.ui.mici.onroad.cameraview import CameraView
 from openpilot.system.ui.lib.application import FontWeight, gui_app, MousePos, MouseEvent, TextAlignment, TextAlignmentVertical
-from openpilot.system.ui.widgets.label import UnifiedLabel
+from openpilot.system.ui.widgets.label import UnifiedLabel, gui_label
 from openpilot.system.ui.widgets import Widget
 from openpilot.common.filter_simple import BounceFilter, FirstOrderFilter
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, DeviceCameraConfig, view_frame_from_device_frame
@@ -26,6 +26,14 @@ CALIBRATED = log.ExtrinsicsCalibration.Status.calibrated
 NARROW_ROAD_CAM = VisionStreamType.VISION_STREAM_NARROW_ROAD
 WIDE_CAM = VisionStreamType.VISION_STREAM_WIDE_ROAD
 DEFAULT_DEVICE_CAMERA = DEVICE_CAMERAS["tici", "ar0231"]
+LongitudinalPlanSource = log.LongitudinalPlan.LongitudinalPlanSource
+_LONG_SOURCE_LABEL = {
+  LongitudinalPlanSource.cruise: "cruise",
+  LongitudinalPlanSource.lead0: "lead",
+  LongitudinalPlanSource.lead1: "lead",
+  LongitudinalPlanSource.lead2: "lead",
+  LongitudinalPlanSource.e2e: "e2e",
+}
 
 
 class BookmarkState(IntEnum):
@@ -262,6 +270,7 @@ class AugmentedRoadView(CameraView):
 
     # Draw fake rounded border
     rl.draw_rectangle_rounded_lines_ex(self._content_rect, 0.2 * 1.02, 10, 50, rl.BLACK)
+    self._draw_long_source(self._content_rect)
 
     # End clipping region
     rl.end_scissor_mode()
@@ -274,6 +283,21 @@ class AugmentedRoadView(CameraView):
       self._confidence_ball.render(self.rect)
 
     self._bookmark_icon.render(self.rect)
+
+  def _draw_long_source(self, rect: rl.Rectangle) -> None:
+    sm = ui_state.sm
+    if not ui_state.has_longitudinal_control or not sm['selfdriveState'].enabled or not sm.alive['longitudinalPlan']:
+      return
+    label = _LONG_SOURCE_LABEL.get(sm['longitudinalPlan'].longitudinalPlanSource.raw)
+    if label is None:
+      return
+
+    label_rect = rl.Rectangle(rect.x, rect.y + 16, rect.width - 16, 40)
+    shadow = rl.Rectangle(label_rect.x + 1, label_rect.y + 1, label_rect.width, label_rect.height)
+    gui_label(shadow, label, 32, rl.Color(0, 0, 0, 180), FontWeight.BOLD,
+              alignment=TextAlignment.RIGHT, alignment_vertical=TextAlignmentVertical.TOP)
+    gui_label(label_rect, label, 32, rl.Color(255, 255, 255, int(255 * 0.9)), FontWeight.BOLD,
+              alignment=TextAlignment.RIGHT, alignment_vertical=TextAlignmentVertical.TOP)
 
   def close(self):
     self._navigation.close()
