@@ -85,11 +85,11 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
 
 def get_A_max_from_personality(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
-    return 1.00
-  elif personality==log.LongitudinalPersonality.standard:
     return 1.25
-  elif personality==log.LongitudinalPersonality.aggressive:
+  elif personality==log.LongitudinalPersonality.standard:
     return 1.50
+  elif personality==log.LongitudinalPersonality.aggressive:
+    return 1.75
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
