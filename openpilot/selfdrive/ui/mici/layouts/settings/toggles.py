@@ -19,6 +19,12 @@ class TogglesLayoutMici(NavScroller):
                                                                "Aggressive follows closer, with firmer gas and braking.\n" +
                                                                "Relaxed leaves more space.\n" +
                                                                "Use the steering wheel distance button on supported cars.")
+    # Missing value reads as index 0 in BigMultiParamToggle. The param default is 1 (0.0 s).
+    if ui_state.params.get("LateralDelayOffset") is None:
+      ui_state.params.put("LateralDelayOffset", 1)
+    self._lat_delay_toggle = BigMultiParamToggle("lateral delay", "LateralDelayOffset", ["-0.1", "0.0", "0.1"],
+                                                  description="Added to the model's lateral action time, in seconds.\n" +
+                                                              "0.0 is the current delay.")
     self._initial_cruise_speed = InitialCruiseSpeedButton()
     self._initial_cruise_speed.set_visible(lambda: ui_state.CP is not None and ui_state.has_longitudinal_control and not ui_state.CP.pcmCruise)
     is_metric_toggle = BigToggle("use metric units", initial_state=ui_state.params.get_bool("IsMetric"), toggle_callback=self._on_metric_toggle)
@@ -39,6 +45,7 @@ class TogglesLayoutMici(NavScroller):
 
     self._scroller.add_widgets([
       self._personality_toggle,
+      self._lat_delay_toggle,
       self._initial_cruise_speed,
       is_metric_toggle,
       ldw_toggle,

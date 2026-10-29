@@ -45,6 +45,8 @@ SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
 LAT_SMOOTH_SECONDS = 0.0
 LONG_SMOOTH_SECONDS = 0.3
+# Index matches the LateralDelayOffset param: -0.1, 0.0, 0.1 seconds.
+LAT_DELAY_OFFSETS = (-0.1, 0.0, 0.1)
 MIN_LAT_CONTROL_SPEED = 0.3
 BIG_MODEL_TIMEOUT = 60
 
@@ -405,7 +407,10 @@ def main(demo=False):
     transforms = {name: model_transform_extra if 'big' in name else model_transform_main for name in model.vision_input_names}
     frame_delay = DT_MDL # compensate for time passed since the frame was captured: current_time - timestamp_eof is 50ms on average
     action_delay = DT_MDL / 2 # middle of the interval between model output (current state) and next frame (expected state)
-    lat_action_t = lat_delay + frame_delay + action_delay
+    lat_delay_offset_idx = params.get("LateralDelayOffset", return_default=True)
+    if not isinstance(lat_delay_offset_idx, int) or not 0 <= lat_delay_offset_idx < len(LAT_DELAY_OFFSETS):
+      lat_delay_offset_idx = 1
+    lat_action_t = lat_delay + frame_delay + action_delay + LAT_DELAY_OFFSETS[lat_delay_offset_idx]
     long_action_t = long_delay + frame_delay + action_delay
     inputs: dict[str, np.ndarray] = {
       'desire_pulse': vec_desire,
