@@ -47,7 +47,7 @@ LAT_SMOOTH_SECONDS = 0.0
 LONG_SMOOTH_SECONDS = 0.3
 # Index matches the LateralDelayOffset param: -0.1, 0.0, 0.1 seconds.
 LAT_DELAY_OFFSETS = (-0.1, 0.0, 0.1)
-MIN_LAT_CONTROL_SPEED = 0.3
+MIN_LAT_CONTROL_SPEED = 1.6
 BIG_MODEL_TIMEOUT = 60
 
 
