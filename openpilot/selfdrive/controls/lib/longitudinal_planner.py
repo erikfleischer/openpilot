@@ -8,13 +8,14 @@ from openpilot.common.constants import CV
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.modeld.constants import ModelConstants
-from openpilot.selfdrive.controls.lib.accel_boost import AccelBoost
+from openpilot.common.params import Params
+from openpilot.common.swaglog import cloudlog
+from openpilot.selfdrive.controls.lib.accel_boost import ACCEL_BOOST_FIXED, AccelBoost
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan, should_stop
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
-from openpilot.common.swaglog import cloudlog
 
 A_CRUISE_MAX_VALS = [1.2, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
@@ -54,6 +55,7 @@ class LongitudinalPlanner:
     self.dt = dt
     self.allow_throttle = True
     self.accel_boost = AccelBoost()
+    self.params = Params()
 
     self.a_desired = init_a
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
@@ -159,9 +161,13 @@ class LongitudinalPlanner:
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
+    boost_mode = self.params.get("AccelBoostMode", return_default=True)
+    if not isinstance(boost_mode, int) or not 0 <= boost_mode < len(ACCEL_BOOST_FIXED):
+      boost_mode = 0
     # Cruise is an obstacle inside the MPC, so the MPC accel is already cruise-limited.
     # Chill mode is gone upstream, so model acceleration always competes with the MPC.
-    output_a_target_e2e = self.accel_boost.update(sm, output_a_target_e2e, output_a_target_mpc, output_a_target_mpc)
+    output_a_target_e2e = self.accel_boost.update(sm, output_a_target_e2e, output_a_target_mpc, output_a_target_mpc,
+                                                  ACCEL_BOOST_FIXED[boost_mode])
     output_a_target = min(output_a_target_e2e, output_a_target_mpc)
     self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
     if output_a_target < output_a_target_mpc:

@@ -299,6 +299,14 @@ class AugmentedRoadView(CameraView):
     gui_label(label_rect, label, 32, rl.Color(255, 255, 255, int(255 * 0.9)), FontWeight.BOLD,
               alignment=TextAlignment.RIGHT, alignment_vertical=TextAlignmentVertical.TOP)
 
+    boost_rect = rl.Rectangle(rect.x, rect.y + 50, rect.width - 16, 40)
+    boost_shadow = rl.Rectangle(boost_rect.x + 1, boost_rect.y + 1, boost_rect.width, boost_rect.height)
+    boost_text = f"{sm['longitudinalPlan'].accelBoost:.2f}"
+    gui_label(boost_shadow, boost_text, 32, rl.Color(0, 0, 0, 180), FontWeight.BOLD,
+              alignment=TextAlignment.RIGHT, alignment_vertical=TextAlignmentVertical.TOP)
+    gui_label(boost_rect, boost_text, 32, rl.Color(255, 255, 255, int(255 * 0.9)), FontWeight.BOLD,
+              alignment=TextAlignment.RIGHT, alignment_vertical=TextAlignmentVertical.TOP)
+
   def close(self):
     self._navigation.close()
     super().close()
