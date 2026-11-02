@@ -7,13 +7,14 @@ from openpilot.common.constants import CV
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.modeld.constants import ModelConstants
-from openpilot.selfdrive.controls.lib.accel_boost import AccelBoost
+from openpilot.common.params import Params
+from openpilot.common.swaglog import cloudlog
+from openpilot.selfdrive.controls.lib.accel_boost import ACCEL_BOOST_FIXED, AccelBoost
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan, should_stop
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
-from openpilot.common.swaglog import cloudlog
 
 J_CRUISE_VALS = [1.6, 1.2, 0.8, 0.6]
 J_CRUISE_BP = [0., 10.0, 25., 40.]
@@ -36,6 +37,7 @@ class LongitudinalPlanner:
     self.fcw = False
     self.dt = dt
     self.accel_boost = AccelBoost()
+    self.params = Params()
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
@@ -101,7 +103,11 @@ class LongitudinalPlanner:
     self.a_cruise = get_cruise_accel(v_cruise, v_ego, self.a_cruise, self.output_a_target, self.dt)
     cruise_should_stop = should_stop(v_ego, self.a_cruise)
 
-    output_a_target_e2e = self.accel_boost.update(sm, output_a_target_e2e, output_a_target_mpc, self.a_cruise)
+    boost_mode = self.params.get("AccelBoostMode", return_default=True)
+    if not isinstance(boost_mode, int) or not 0 <= boost_mode < len(ACCEL_BOOST_FIXED):
+      boost_mode = 0
+    output_a_target_e2e = self.accel_boost.update(sm, output_a_target_e2e, output_a_target_mpc, self.a_cruise,
+                                                  ACCEL_BOOST_FIXED[boost_mode])
 
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop),

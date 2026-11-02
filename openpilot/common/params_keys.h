@@ -6,6 +6,7 @@
 #include "openpilot/cereal/gen/cpp/log.capnp.h"
 
 inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
+    {"AccelBoostMode", {PERSISTENT, INT, "0"}},
     {"AccessToken", {CLEAR_ON_MANAGER_START | DONT_LOG, STRING}},
     {"AdbEnabled", {PERSISTENT, BOOL}},
     {"AlwaysOnDM", {PERSISTENT, BOOL}},

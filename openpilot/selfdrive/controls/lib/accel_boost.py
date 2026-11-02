@@ -6,6 +6,8 @@ ACCEL_BOOST_MAX = 0.2
 ACCEL_BOOST_RATE = 0.025
 ACCEL_BOOST_PER_OVERRIDE = 0.05
 ACCEL_BOOST_MIN_SPEED = 10 * CV.MPH_TO_MS
+# Index matches AccelBoostMode. None keeps the gas-pedal accumulator.
+ACCEL_BOOST_FIXED = (None, 0.0, 0.1, 0.2)
 
 
 class AccelBoost:
@@ -13,13 +15,29 @@ class AccelBoost:
     self.total_boost = 0.0
     self.boost_this_override = 0.0
     self.boost_eligible = False
+    self._gas_mode = True
 
-  def update(self, sm, output_a_target_e2e, output_a_target_mpc, a_cruise):
+  def update(self, sm, output_a_target_e2e, output_a_target_mpc, a_cruise, fixed_boost=None):
     enabled = sm['selfdriveState'].enabled
     gas_pressed = sm['carState'].gasPressed
     v_ego = sm['carState'].vEgo
     speed_scale = np.interp(v_ego, [ACCEL_BOOST_MIN_SPEED, 2 * ACCEL_BOOST_MIN_SPEED], [0.0, 1.0])
     boost_scale = speed_scale * np.interp(output_a_target_e2e, [-1.0, -0.5, 5.0], [0.0, 1.0, 1.0], right=0.0)
+
+    if fixed_boost is not None:
+      self.boost_this_override = 0.0
+      self.boost_eligible = False
+      self._gas_mode = False
+      self.total_boost = 0.0 if not enabled else float(fixed_boost)
+      return output_a_target_e2e + self.total_boost * boost_scale
+
+    # A fixed value must not stick after switching back to the pedal.
+    if not self._gas_mode:
+      self.total_boost = 0.0
+      self.boost_this_override = 0.0
+      self.boost_eligible = False
+    self._gas_mode = True
+
     model_limited = output_a_target_e2e + self.total_boost * boost_scale < min(output_a_target_mpc, a_cruise) - 0.1
 
     if not enabled or not gas_pressed:

@@ -21,6 +21,9 @@ DESCRIPTIONS = {
     "In relaxed mode openpilot will stay further away from lead cars. On supported cars, you can cycle through these settings with " +
     "your steering wheel distance button."
   ),
+  "AccelBoostMode": tr_noop(
+    "Gas builds boost from the accelerator pedal. 0, 0.1, and 0.2 hold total boost at that value while engaged."
+  ),
   "IsLdwEnabled": tr_noop(
     "Receive alerts to steer back into the lane when your vehicle drifts over a detected lane line " +
     "without a turn signal activated while driving over 31 mph (50 km/h)."
@@ -92,6 +95,15 @@ class TogglesLayout(Widget):
       selected_index=self._params.get("LongitudinalPersonality", return_default=True),
       icon="speed_limit.png"
     )
+    self._accel_boost_setting = multiple_button_item(
+      lambda: tr("Accel Boost"),
+      lambda: tr(DESCRIPTIONS["AccelBoostMode"]),
+      buttons=[lambda: tr("gas"), lambda: tr("0"), lambda: tr("0.1"), lambda: tr("0.2")],
+      button_width=180,
+      callback=self._set_accel_boost_mode,
+      selected_index=self._params.get("AccelBoostMode", return_default=True),
+      icon="speed_limit.png"
+    )
 
     self._toggles = {}
     self._initial_cruise_speed = ListItem(
@@ -133,6 +145,7 @@ class TogglesLayout(Widget):
       # insert longitudinal personality after NDOG toggle
       if param == "DisengageOnAccelerator":
         self._toggles["LongitudinalPersonality"] = self._long_personality_setting
+        self._toggles["AccelBoostMode"] = self._accel_boost_setting
         self._toggles["InitialCruiseSpeedKph"] = self._initial_cruise_speed
 
     self._scroller = Scroller(list(self._toggles.values()), line_separator=True, spacing=0)
@@ -181,3 +194,6 @@ class TogglesLayout(Widget):
 
   def _set_longitudinal_personality(self, button_index: int):
     self._params.put("LongitudinalPersonality", button_index, block=True)
+
+  def _set_accel_boost_mode(self, button_index: int):
+    self._params.put("AccelBoostMode", button_index, block=True)
