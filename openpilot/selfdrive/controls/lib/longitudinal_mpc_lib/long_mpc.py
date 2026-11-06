@@ -100,11 +100,11 @@ CURVATURE_LIMIT_LEAD_TIME = 1.0
 
 def get_A_TOTAL_max_from_personality(personality=log.LongitudinalPersonality.standard):
   if personality == log.LongitudinalPersonality.relaxed:
-    a_total = 1.5
-  elif personality == log.LongitudinalPersonality.standard:
     a_total = 2.0
-  elif personality == log.LongitudinalPersonality.aggressive:
+  elif personality == log.LongitudinalPersonality.standard:
     a_total = 2.5
+  elif personality == log.LongitudinalPersonality.aggressive:
+    a_total = 3.0
   else:
     raise NotImplementedError("Longitudinal personality not supported")
   return min(a_total, ISO_LATERAL_ACCEL)
