@@ -17,6 +17,17 @@ from openpilot.common.version import RELEASE_BRANCHES
 HEAD_BUTTON_FONT_SIZE = 40
 HOME_PADDING = 8
 ALERTS_ZONE_WIDTH = 180
+# 36px does not fit "Chestnut USB on  14.9 V  5.1 A" on the 536px screen.
+CHESTNUT_STATUS_FONT_SIZE = 30
+
+
+def chestnut_status_text(usb_connected: bool, supply_mv: int | None, supply_ma: int | None) -> str:
+  if not usb_connected:
+    return "Chestnut USB off"
+  if supply_mv is None or supply_ma is None:
+    return "Chestnut USB on"
+  return f"Chestnut USB on  {supply_mv / 1000:.1f} V  {supply_ma / 1000:.1f} A"
+
 
 NetworkType = log.DeviceState.NetworkType
 
@@ -154,6 +165,7 @@ class MiciHomeLayout(Widget):
     self._date_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
     self._branch_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, scroll=True)
     self._version_commit_label = UnifiedLabel("", font_size=36, text_color=rl.GRAY, font_weight=FontWeight.ROMAN, max_width=480, wrap_text=False)
+    self._chestnut_status_label = UnifiedLabel("", font_size=CHESTNUT_STATUS_FONT_SIZE, font_weight=FontWeight.ROMAN, scroll=True)
 
   def set_callbacks(self, on_settings: Callable | None = None, on_alerts: Callable | None = None,
                     alert_count_callback: Callable[[], int] | None = None,
@@ -196,10 +208,11 @@ class MiciHomeLayout(Widget):
     self._openpilot_label.set_position(text_pos.x, text_pos.y)
     self._openpilot_label.render()
 
+    version_line_y = text_pos.y + self._openpilot_label.font_size + 16
     if self._version_text is not None:
       # release branch
       release_branch = self._version_text[1] in RELEASE_BRANCHES
-      version_pos = rl.Rectangle(text_pos.x, text_pos.y + self._openpilot_label.font_size + 16, 100, 44)
+      version_pos = rl.Rectangle(text_pos.x, version_line_y, 100, 44)
       self._version_label.set_text(self._version_text[0])
       self._version_label.set_position(version_pos.x, version_pos.y)
       self._version_label.render()
@@ -208,16 +221,26 @@ class MiciHomeLayout(Widget):
       self._date_label.set_position(version_pos.x + self._version_label.text_width + 10, version_pos.y)
       self._date_label.render()
 
-      self._branch_label.set_max_width(gui_app.width - self._version_label.text_width - self._date_label.text_width - 32)
+      # Keep the commit on this line so the chestnut status can use the full second line.
+      commit_text = "" if release_branch else " " + self._version_text[2]
+      self._version_commit_label.set_text(commit_text)
+      self._version_commit_label.set_position(version_pos.x + self._version_label.text_width + self._date_label.text_width + 10, version_pos.y)
+      if commit_text:
+        self._version_commit_label.render()
+      commit_width = self._version_commit_label.text_width if commit_text else 0
+
+      used_width = self._version_label.text_width + self._date_label.text_width + commit_width
+      self._branch_label.set_max_width(max(1, int(gui_app.width - used_width - 32)))
       self._branch_label.set_text(" " + ("release" if release_branch else self._version_text[1]))
-      self._branch_label.set_position(version_pos.x + self._version_label.text_width + self._date_label.text_width + 20, version_pos.y)
+      self._branch_label.set_position(version_pos.x + used_width + 20, version_pos.y)
       self._branch_label.render()
 
-      if not release_branch:
-        # 2nd line
-        self._version_commit_label.set_text(self._version_text[2])
-        self._version_commit_label.set_position(version_pos.x, version_pos.y + self._date_label.font_size + 7)
-        self._version_commit_label.render()
+    status_y = version_line_y + (self._date_label.font_size + 7 if self._version_text is not None else 0)
+    self._chestnut_status_label.set_text(chestnut_status_text(
+      ui_state.chestnut_usb, ui_state.chestnut_supply_mv, ui_state.chestnut_supply_ma))
+    self._chestnut_status_label.set_max_width(max(1, int(self.rect.x + gui_app.width - HOME_PADDING - text_pos.x)))
+    self._chestnut_status_label.set_position(text_pos.x, status_y)
+    self._chestnut_status_label.render()
 
     # ***** Center-aligned bottom section icons *****
     usb_connected = ui_state.usb_connected

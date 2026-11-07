@@ -54,6 +54,7 @@ class UIState:
         "extrinsicsCalibration",
         "radarState",
         "deviceState",
+        "chestnutState",
         "pandaStates",
         "carParams",
         "driverMonitoringState",
@@ -93,6 +94,9 @@ class UIState:
     self.navigation_enabled: bool = self.params.get_bool("NavigationEnabled")
     self.nav_destination_set: bool = self.params.get("NavDestination") is not None
     self.chestnut_present: bool = False
+    self.chestnut_usb: bool = False
+    self.chestnut_supply_mv: int | None = None
+    self.chestnut_supply_ma: int | None = None
     self.chestnut_compiled: bool = chestnut_compiled()
     self.chestnut_active: bool | None = None
     self.chestnut_loading: bool = False
@@ -216,7 +220,16 @@ class UIState:
       self._started_prev = self.started
 
   def _update_chestnut_state(self) -> None:
-    detected = self.sm["deviceState"].chestnutPresent
+    detected = bool(self.sm["deviceState"].chestnutPresent)
+    self.chestnut_usb = detected
+    if self.sm.alive["chestnutState"] and self.sm.valid["chestnutState"]:
+      state = self.sm["chestnutState"]
+      self.chestnut_supply_mv = int(state.supplyVoltage)
+      self.chestnut_supply_ma = int(state.supplyCurrent)
+    else:
+      self.chestnut_supply_mv = None
+      self.chestnut_supply_ma = None
+
     if not self.started:
       self.chestnut_present = detected
       self.chestnut_state = (ChestnutState.FAILED if self.chestnut_alert else
