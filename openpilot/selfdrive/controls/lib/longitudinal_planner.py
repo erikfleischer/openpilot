@@ -214,4 +214,5 @@ class LongitudinalPlanner:
     obstacles.leadTrajectoryV1 = self.mpc.lead_xv_1[:, 1].tolist()
     obstacles.cruiseTrajectoryX = self.mpc.cruise_xv[:, 0].tolist()
     obstacles.cruiseTrajectoryV = self.mpc.cruise_xv[:, 1].tolist()
+    obstacles.vCruiseLimited = float(np.min(self.mpc.cruise_xv[:, 1]))
     pm.send('longitudinalMpcObstacles', obstacles_send)

@@ -21,6 +21,8 @@ struct LongitudinalMpcObstacles @0x81c2f05a394cf4af {
   # X is the fake cruise obstacle distance used by MPC; V is v_cruise after curvature limiting
   cruiseTrajectoryX @4 :List(Float32);
   cruiseTrajectoryV @5 :List(Float32);
+  # minimum of cruiseTrajectoryV, m/s
+  vCruiseLimited @6 :Float32;
 }
 
 struct CustomReserved1 @0xaedffd8f31e7b55d {

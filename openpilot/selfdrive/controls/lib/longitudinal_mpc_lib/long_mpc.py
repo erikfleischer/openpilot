@@ -415,9 +415,9 @@ class LongitudinalMpc:
     # TODO does this make sense when max_a is negative?
     v_upper = v_ego + (T_IDXS * CRUISE_MAX_ACCEL * 1.05)
     v_cruise_clipped = np.clip(v_cruise * np.ones(N+1), v_lower, v_upper)
-    v_cruise_clipped = apply_curvature_speed_limit(v_cruise_clipped, modelV2, personality)
-    cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow)
-    self.cruise_xv = np.column_stack((cruise_obstacle, v_cruise_clipped))
+    v_cruise_limited = apply_curvature_speed_limit(v_cruise_clipped, modelV2, personality)
+    cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_limited) + get_safe_obstacle_distance(v_cruise_limited, t_follow)
+    self.cruise_xv = np.column_stack((cruise_obstacle, v_cruise_limited))
 
     x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle, cruise_obstacle])
     self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
