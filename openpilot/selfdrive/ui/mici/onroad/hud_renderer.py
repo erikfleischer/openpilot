@@ -19,6 +19,8 @@ KM_TO_MILE = 0.621371
 CRUISE_DISABLED_CHAR = '–'
 
 SET_SPEED_PERSISTENCE = 2.5  # seconds
+# Show vCruiseLimited while it is at least this far under the current speed.
+V_CRUISE_LIMITED_TOLERANCE_KPH = 3.0
 
 
 @dataclass(frozen=True)
@@ -171,16 +173,16 @@ class HudRenderer(Widget):
     self.set_speed = set_speed
     self.is_cruise_set = 0 < self.set_speed < SET_SPEED_NA
     self.is_cruise_available = self.set_speed != -1
-    self._update_cruise_limited(sm)
 
     v_ego_cluster = car_state.vEgoCluster
     self.v_ego_cluster_seen = self.v_ego_cluster_seen or v_ego_cluster != 0.0
     v_ego = v_ego_cluster if self.v_ego_cluster_seen else car_state.vEgo
     speed_conversion = CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
     self.speed = max(0.0, v_ego * speed_conversion)
+    self._update_cruise_limited(sm, v_ego)
 
-  def _update_cruise_limited(self, sm) -> None:
-    """Use the curvature-limited cruise speed when it is below the displayed set speed."""
+  def _update_cruise_limited(self, sm, v_ego: float) -> None:
+    """Show vCruiseLimited while it is below the current speed by the tolerance."""
     self._cruise_limited = False
     self._v_cruise_limited_kph = 0.0
     if not self.is_cruise_set or not ui_state.has_longitudinal_control:
@@ -189,7 +191,8 @@ class HudRenderer(Widget):
       return
 
     v_limited_kph = sm['longitudinalMpcObstacles'].vCruiseLimited * CV.MS_TO_KPH
-    if 1.0 < v_limited_kph < self.set_speed:
+    v_ego_kph = v_ego * CV.MS_TO_KPH
+    if v_limited_kph > 1.0 and v_limited_kph < v_ego_kph - V_CRUISE_LIMITED_TOLERANCE_KPH:
       self._cruise_limited = True
       self._v_cruise_limited_kph = v_limited_kph
 
@@ -275,8 +278,10 @@ class HudRenderer(Widget):
 
   def _draw_set_speed(self, rect: rl.Rectangle) -> None:
     """Draw the MAX speed indicator box."""
-    alpha = self._set_speed_alpha_filter.update(0 < rl.get_time() - self._set_speed_changed_time < SET_SPEED_PERSISTENCE and
-                                                self._can_draw_top_icons and self._engaged)
+    show_set_speed = (0 < rl.get_time() - self._set_speed_changed_time < SET_SPEED_PERSISTENCE and
+                      self._can_draw_top_icons and self._engaged)
+    show_limited = self._cruise_limited and self._can_draw_top_icons and self._engaged
+    alpha = self._set_speed_alpha_filter.update(show_set_speed or show_limited)
     if alpha < 1e-2:
       return
 
