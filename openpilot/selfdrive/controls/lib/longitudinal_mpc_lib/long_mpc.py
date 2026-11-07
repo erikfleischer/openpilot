@@ -102,9 +102,9 @@ def get_A_TOTAL_max_from_personality(personality=log.LongitudinalPersonality.sta
   if personality == log.LongitudinalPersonality.relaxed:
     a_total = 2.0
   elif personality == log.LongitudinalPersonality.standard:
-    a_total = 2.5
+    a_total = 2.25
   elif personality == log.LongitudinalPersonality.aggressive:
-    a_total = 3.0
+    a_total = 2.5
   else:
     raise NotImplementedError("Longitudinal personality not supported")
   return min(a_total, ISO_LATERAL_ACCEL)
