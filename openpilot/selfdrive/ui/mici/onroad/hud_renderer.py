@@ -33,6 +33,7 @@ class FontSizes:
 class Colors:
   WHITE = rl.WHITE
   WHITE_TRANSLUCENT = rl.Color(255, 255, 255, 200)
+  LIGHT_BLUE = rl.Color(153, 204, 255, 255)
 
 
 FONT_SIZES = FontSizes()
@@ -103,6 +104,8 @@ class HudRenderer(Widget):
     self.is_cruise_set: bool = False
     self.is_cruise_available: bool = True
     self.set_speed: float = SET_SPEED_NA
+    self._cruise_limited: bool = False
+    self._v_cruise_limited_kph: float = 0.0
     self._set_speed_changed_time: float = 0
     self.speed: float = 0.0
     self.v_ego_cluster_seen: bool = False
@@ -151,6 +154,8 @@ class HudRenderer(Widget):
     if sm.recv_frame["carState"] < ui_state.started_frame:
       self.is_cruise_set = False
       self.set_speed = SET_SPEED_NA
+      self._cruise_limited = False
+      self._v_cruise_limited_kph = 0.0
       self.speed = 0.0
       return
 
@@ -166,12 +171,27 @@ class HudRenderer(Widget):
     self.set_speed = set_speed
     self.is_cruise_set = 0 < self.set_speed < SET_SPEED_NA
     self.is_cruise_available = self.set_speed != -1
+    self._update_cruise_limited(sm)
 
     v_ego_cluster = car_state.vEgoCluster
     self.v_ego_cluster_seen = self.v_ego_cluster_seen or v_ego_cluster != 0.0
     v_ego = v_ego_cluster if self.v_ego_cluster_seen else car_state.vEgo
     speed_conversion = CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
     self.speed = max(0.0, v_ego * speed_conversion)
+
+  def _update_cruise_limited(self, sm) -> None:
+    """Use the curvature-limited cruise speed when it is below the displayed set speed."""
+    self._cruise_limited = False
+    self._v_cruise_limited_kph = 0.0
+    if not self.is_cruise_set or not ui_state.has_longitudinal_control:
+      return
+    if not sm.alive['longitudinalMpcObstacles'] or not sm.valid['longitudinalMpcObstacles']:
+      return
+
+    v_limited_kph = sm['longitudinalMpcObstacles'].vCruiseLimited * CV.MS_TO_KPH
+    if 1.0 < v_limited_kph < self.set_speed:
+      self._cruise_limited = True
+      self._v_cruise_limited_kph = v_limited_kph
 
   def _render(self, rect: rl.Rectangle) -> None:
     """Render HUD elements to the screen."""
@@ -268,10 +288,11 @@ class HudRenderer(Widget):
     rl.draw_circle_gradient(rl.Vector2(x + circle_radius, y + circle_radius), circle_radius,
                             rl.Color(0, 0, 0, int(255 / 2 * alpha)), rl.BLANK)
 
-    set_speed_color = rl.Color(255, 255, 255, int(255 * 0.9 * alpha))
+    speed_color = COLORS.LIGHT_BLUE if self._cruise_limited else COLORS.WHITE
+    set_speed_color = rl.Color(speed_color.r, speed_color.g, speed_color.b, int(255 * 0.9 * alpha))
     max_color = rl.Color(255, 255, 255, int(255 * 0.9 * alpha))
 
-    set_speed = self.set_speed
+    set_speed = self._v_cruise_limited_kph if self._cruise_limited else self.set_speed
     if self.is_cruise_set and not ui_state.is_metric:
       set_speed *= KM_TO_MILE
 

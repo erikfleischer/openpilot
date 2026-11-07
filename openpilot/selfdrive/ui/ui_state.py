@@ -64,6 +64,7 @@ class UIState:
         "managerState",
         "selfdriveState",
         "longitudinalPlan",
+        "longitudinalMpcObstacles",
         "gpsLocationExternal",
         "gpsLocation",
         "navInstruction",
