@@ -222,7 +222,7 @@ class UIState:
   def _update_chestnut_state(self) -> None:
     detected = bool(self.sm["deviceState"].chestnutPresent)
     self.chestnut_usb = detected
-    if self.sm.alive["chestnutState"] and self.sm.valid["chestnutState"]:
+    if self.sm.alive["chestnutState"]:
       state = self.sm["chestnutState"]
       self.chestnut_supply_mv = int(state.supplyVoltage)
       self.chestnut_supply_ma = int(state.supplyCurrent)
