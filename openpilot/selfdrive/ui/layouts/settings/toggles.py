@@ -22,7 +22,8 @@ DESCRIPTIONS = {
     "your steering wheel distance button."
   ),
   "AccelBoostMode": tr_noop(
-    "Gas builds boost from the accelerator pedal. 0, 0.1, and 0.2 hold total boost at that value while engaged."
+    "Gas builds boost from the accelerator pedal. 0, 0.1, and 0.2 hold total boost at that value while engaged. " +
+    "Confidence follows the confidence ball: 0.2 above 0.5, 0.1 above 0.2, otherwise 0."
   ),
   "IsLdwEnabled": tr_noop(
     "Receive alerts to steer back into the lane when your vehicle drifts over a detected lane line " +
@@ -98,8 +99,8 @@ class TogglesLayout(Widget):
     self._accel_boost_setting = multiple_button_item(
       lambda: tr("Accel Boost"),
       lambda: tr(DESCRIPTIONS["AccelBoostMode"]),
-      buttons=[lambda: tr("gas"), lambda: tr("0"), lambda: tr("0.1"), lambda: tr("0.2")],
-      button_width=180,
+      buttons=[lambda: tr("gas"), lambda: tr("0"), lambda: tr("0.1"), lambda: tr("0.2"), lambda: tr("confidence")],
+      button_width=210,
       callback=self._set_accel_boost_mode,
       selected_index=self._params.get("AccelBoostMode", return_default=True),
       icon="speed_limit.png"

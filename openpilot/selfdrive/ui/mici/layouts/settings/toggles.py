@@ -19,9 +19,10 @@ class TogglesLayoutMici(NavScroller):
                                                                "Aggressive follows closer, with firmer gas and braking.\n" +
                                                                "Relaxed leaves more space.\n" +
                                                                "Use the steering wheel distance button on supported cars.")
-    self._accel_boost_toggle = BigMultiParamToggle("accel boost", "AccelBoostMode", ["gas", "0", "0.1", "0.2"],
+    self._accel_boost_toggle = BigMultiParamToggle("accel boost", "AccelBoostMode", ["gas", "0", "0.1", "0.2", "confidence"],
                                                    description="Gas builds boost from the accelerator pedal.\n" +
-                                                               "0, 0.1, and 0.2 hold total boost at that value while engaged.")
+                                                               "0, 0.1, and 0.2 hold total boost at that value while engaged.\n" +
+                                                               "Confidence follows the confidence ball: 0.2 above 0.5, 0.1 above 0.2, otherwise 0.")
     self._initial_cruise_speed = InitialCruiseSpeedButton()
     self._initial_cruise_speed.set_visible(lambda: ui_state.CP is not None and ui_state.has_longitudinal_control and not ui_state.CP.pcmCruise)
     is_metric_toggle = BigToggle("use metric units", initial_state=ui_state.params.get_bool("IsMetric"), toggle_callback=self._on_metric_toggle)

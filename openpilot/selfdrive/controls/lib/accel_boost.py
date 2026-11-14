@@ -1,6 +1,7 @@
 import numpy as np
 from openpilot.cereal import log
 from openpilot.common.constants import CV
+from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
 
 ACCEL_BOOST_INITIAL = 0.1
@@ -8,8 +9,15 @@ ACCEL_BOOST_MAX = 0.2
 ACCEL_BOOST_RATE = 0.025
 ACCEL_BOOST_PER_OVERRIDE = 0.05
 ACCEL_BOOST_MIN_SPEED = 10 * CV.MPH_TO_MS
+# Same cuts as the confidence ball: green above 0.5, yellow above 0.2, otherwise red.
+CONFIDENCE_HIGH = 0.5
+CONFIDENCE_MID = 0.2
+CONFIDENCE_FILTER_RC = 0.5
+CONFIDENCE_FILTER_INIT = -0.5
+# Sentinel: set total_boost from model confidence instead of a fixed value.
+ACCEL_BOOST_CONFIDENCE = object()
 # Index matches AccelBoostMode. None keeps the gas-pedal accumulator.
-ACCEL_BOOST_FIXED = (None, 0.0, 0.1, 0.2)
+ACCEL_BOOST_FIXED = (None, 0.0, 0.1, 0.2, ACCEL_BOOST_CONFIDENCE)
 
 
 class AccelBoost:
@@ -18,6 +26,21 @@ class AccelBoost:
     self.boost_this_override = 0.0
     self.boost_eligible = False
     self._gas_mode = True
+    self._confidence_filter = FirstOrderFilter(CONFIDENCE_FILTER_INIT, CONFIDENCE_FILTER_RC, DT_MDL)
+
+  def _confidence_boost(self, sm, enabled: bool) -> float:
+    if not enabled:
+      raw = CONFIDENCE_FILTER_INIT
+    else:
+      preds = sm['modelV2'].meta.disengagePredictions
+      raw = ((1 - max(preds.brakeDisengageProbs or [1])) *
+             (1 - max(preds.steerOverrideProbs or [1])))
+    confidence = self._confidence_filter.update(raw)
+    if confidence > CONFIDENCE_HIGH:
+      return ACCEL_BOOST_MAX
+    if confidence > CONFIDENCE_MID:
+      return ACCEL_BOOST_INITIAL
+    return 0.0
 
   def update(self, sm, output_a_target_e2e, output_a_target_mpc, a_cruise, fixed_boost=None):
     enabled = sm['selfdriveState'].enabled
@@ -28,6 +51,9 @@ class AccelBoost:
 
     speed_scale = np.interp(v_ego, [ACCEL_BOOST_MIN_SPEED, 2 * ACCEL_BOOST_MIN_SPEED], [0.0, 1.0])
     boost_scale = speed_scale * np.interp(output_a_target_e2e, [-1.0, -0.5, 5.0], [0.0, 1.0, 1.0], right=0.0)
+
+    if fixed_boost is ACCEL_BOOST_CONFIDENCE:
+      fixed_boost = self._confidence_boost(sm, enabled)
 
     if fixed_boost is not None:
       self.boost_this_override = 0.0
