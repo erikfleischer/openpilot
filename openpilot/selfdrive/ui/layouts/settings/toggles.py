@@ -23,7 +23,7 @@ DESCRIPTIONS = {
   ),
   "AccelBoostMode": tr_noop(
     "Gas builds boost from the accelerator pedal. 0, 0.1, and 0.2 hold total boost at that value while engaged. " +
-    "Confidence follows the confidence ball: 0.2 above 0.5, 0.1 above 0.2, otherwise 0."
+    "Confidence ramps total boost from 0 below 0.2 up to 0.2 at 0.5, using the same cuts as the confidence ball."
   ),
   "IsLdwEnabled": tr_noop(
     "Receive alerts to steer back into the lane when your vehicle drifts over a detected lane line " +

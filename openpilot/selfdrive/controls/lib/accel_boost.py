@@ -9,7 +9,7 @@ ACCEL_BOOST_MAX = 0.2
 ACCEL_BOOST_RATE = 0.025
 ACCEL_BOOST_PER_OVERRIDE = 0.05
 ACCEL_BOOST_MIN_SPEED = 10 * CV.MPH_TO_MS
-# Same cuts as the confidence ball: green above 0.5, yellow above 0.2, otherwise red.
+# Ramp across the confidence ball's yellow band: 0 at red (0.2), full boost at green (0.5).
 CONFIDENCE_HIGH = 0.5
 CONFIDENCE_MID = 0.2
 CONFIDENCE_FILTER_RC = 0.5
@@ -36,11 +36,7 @@ class AccelBoost:
       raw = ((1 - max(preds.brakeDisengageProbs or [1])) *
              (1 - max(preds.steerOverrideProbs or [1])))
     confidence = self._confidence_filter.update(raw)
-    if confidence > CONFIDENCE_HIGH:
-      return ACCEL_BOOST_MAX
-    if confidence > CONFIDENCE_MID:
-      return ACCEL_BOOST_INITIAL
-    return 0.0
+    return float(np.interp(confidence, [CONFIDENCE_MID, CONFIDENCE_HIGH], [0.0, ACCEL_BOOST_MAX]))
 
   def update(self, sm, output_a_target_e2e, output_a_target_mpc, a_cruise, fixed_boost=None):
     enabled = sm['selfdriveState'].enabled
