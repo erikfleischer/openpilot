@@ -288,7 +288,7 @@ SeriesFormat compute_series_format(const std::vector<double> &values, bool enum_
   const double peak = std::max(std::abs(min_value), std::abs(max_value));
   format.digits_before = peak < 1.0 ? 1 : static_cast<int>(std::floor(std::log10(peak))) + 1;
 
-  if (enum_like || all_integer) {
+  if (all_integer) {
     format.decimals = 0;
   } else if (peak >= 1000.0) {
     format.decimals = std::min(max_needed_decimals, 1);

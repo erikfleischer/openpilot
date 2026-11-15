@@ -192,16 +192,25 @@ inline const Message *Database::message(uint32_t address) const {
 
 inline std::vector<std::string> Database::enumNames(const Signal &signal) const {
   if (signal.value_descriptions.empty()) return {};
+  // VAL_ entries are raw codes. Series store physical values, so a scaled
+  // signal (DAS_accelMin is 0.04 m/s^2 per bit) only gets an enum when every
+  // label lands on a small integer after factor and offset. A lone SNA code
+  // such as 511 does not, and must not force an integer readout.
   int max_index = -1;
+  std::vector<std::pair<int, std::string>> entries;
+  entries.reserve(signal.value_descriptions.size());
   for (const auto &entry : signal.value_descriptions) {
-    const double rounded = std::round(entry.value);
-    if (std::abs(entry.value - rounded) > 1e-6 || rounded < 0.0 || rounded > 512.0) return {};
-    max_index = std::max(max_index, static_cast<int>(rounded));
+    const double physical = entry.value * signal.factor + signal.offset;
+    const double rounded = std::round(physical);
+    if (std::abs(physical - rounded) > 1e-6 || rounded < 0.0 || rounded > 512.0) return {};
+    const int index = static_cast<int>(rounded);
+    max_index = std::max(max_index, index);
+    entries.emplace_back(index, entry.text);
   }
   if (max_index < 0) return {};
   std::vector<std::string> names(static_cast<size_t>(max_index + 1));
-  for (const auto &entry : signal.value_descriptions) {
-    names[static_cast<size_t>(std::llround(entry.value))] = entry.text;
+  for (const auto &[index, text] : entries) {
+    names[static_cast<size_t>(index)] = text;
   }
   return names;
 }
