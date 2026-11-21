@@ -127,8 +127,39 @@ void save_framebuffer_png(const fs::path &output_path, int width, int height) {
   fs::remove(ppm_path);
 }
 
-void render_frame(GLFWwindow *window, AppSession *session, UiState *state, const fs::path *capture_path) {
+// Dispatch Wayland events on a refresh-rate cap. glfwSwapInterval(0) keeps
+// eglSwapBuffers from waiting on a frame callback Hyprland will not send
+// while this window is covered; the wait here is what answers xdg pings.
+void pump_window_events(GLFWwindow *window) {
+  const bool pace = glfwGetPlatform() == GLFW_PLATFORM_WAYLAND && glfwGetWindowAttrib(window, GLFW_VISIBLE) == GLFW_TRUE;
+  if (!pace) {
+    glfwPollEvents();
+    return;
+  }
+
+  static double next_frame = 0.0;
+  static double period = 0.0;
+  if (period <= 0.0) {
+    int hz = 60;
+    if (GLFWmonitor *monitor = glfwGetPrimaryMonitor()) {
+      if (const GLFWvidmode *mode = glfwGetVideoMode(monitor)) {
+        if (mode->refreshRate > 1) hz = mode->refreshRate;
+      }
+    }
+    period = 1.0 / static_cast<double>(hz);
+  }
+
+  const double now = glfwGetTime();
+  if (next_frame < now) next_frame = now;
+  while (next_frame > glfwGetTime()) {
+    glfwWaitEventsTimeout(next_frame - glfwGetTime());
+  }
+  next_frame += period;
   glfwPollEvents();
+}
+
+void render_frame(GLFWwindow *window, AppSession *session, UiState *state, const fs::path *capture_path) {
+  pump_window_events(window);
 
   int framebuffer_width = 0;
   int framebuffer_height = 0;

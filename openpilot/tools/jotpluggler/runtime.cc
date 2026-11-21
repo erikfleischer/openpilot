@@ -120,7 +120,13 @@ GlfwRuntime::GlfwRuntime(const Options &options) {
     glfwSetWindowSizeLimits(window_, options.width, options.height, options.width, options.height);
   }
   glfwMakeContextCurrent(window_);
-  glfwSwapInterval(options.show ? 1 : 0);
+  // Wayland EGL waits inside eglSwapBuffers for a wl_surface.frame callback.
+  // Hyprland does not send one while a fullscreen window (mplayer) covers this
+  // one on the same workspace, so vsync stalls the main thread, xdg pings go
+  // unanswered, and the ANR dialog opens over the video. render_unfocused only
+  // covers a hidden workspace. Pace in pump_window_events instead.
+  const bool wayland = glfwGetPlatform() == GLFW_PLATFORM_WAYLAND;
+  glfwSwapInterval(options.show && !wayland ? 1 : 0);
 }
 
 GlfwRuntime::~GlfwRuntime() {
