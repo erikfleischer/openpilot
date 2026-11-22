@@ -13,6 +13,7 @@ from openpilot.selfdrive.ui.mici.onroad.long_indicator import LongIndicator
 from openpilot.selfdrive.ui.mici.onroad.model_renderer import ModelRenderer
 from openpilot.selfdrive.ui.mici.onroad.navigation import NavigationPanel, PANEL_WIDTH
 from openpilot.selfdrive.ui.mici.onroad.confidence_ball import ConfidenceBall
+from openpilot.selfdrive.ui.mici.onroad.decel_test_button import BUTTON_H, BUTTON_W, DecelTestButton
 from openpilot.selfdrive.ui.mici.onroad.cameraview import CameraView
 from openpilot.system.ui.lib.application import FontWeight, gui_app, MousePos, MouseEvent, TextAlignment, TextAlignmentVertical
 from openpilot.system.ui.widgets.label import UnifiedLabel
@@ -171,6 +172,7 @@ class AugmentedRoadView(CameraView):
 
     # Bookmark icon with swipe gesture
     self._bookmark_icon = BookmarkIcon(bookmark_callback)
+    self._decel_button = self._child(DecelTestButton())
 
     self._navigation = NavigationPanel()
     self._model_renderer = ModelRenderer()
@@ -211,9 +213,10 @@ class AugmentedRoadView(CameraView):
       self._offroad_sublabel.set_text("to use openpilot")
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
-    # Don't trigger click callback if bookmark was triggered
-    if not self._bookmark_icon.interacting():
-      super()._handle_mouse_release(mouse_pos)
+    # A tap on the road view scrolls home. The test button and the bookmark swipe consume their own taps.
+    if self._decel_button.ate_click() or self._bookmark_icon.interacting():
+      return
+    super()._handle_mouse_release(mouse_pos)
 
   def _render(self, rect: rl.Rectangle):
     # Offroad shows the side panel in its disengaged state with text in the camera area
@@ -271,8 +274,9 @@ class AugmentedRoadView(CameraView):
       self._confidence_ball.set_hidden(alert_to_render is not None and not not_animating_out)
       self._confidence_ball.render(self._content_rect)
 
-    # Draw fake rounded border
+    # Draw fake rounded border, then the test button so the border stroke does not cover it.
     rl.draw_rectangle_rounded_lines_ex(self._content_rect, 0.2 * 1.02, 10, 50, rl.BLACK)
+    self._decel_button.render(self._decel_button_rect(show_navigation))
 
     # End clipping region
     rl.end_scissor_mode()
@@ -285,6 +289,13 @@ class AugmentedRoadView(CameraView):
       self._navigation.render(rl.Rectangle(self._content_rect.x + self._content_rect.width, self.rect.y, PANEL_WIDTH, self.rect.height))
 
     self._bookmark_icon.render(self.rect)
+
+  def _decel_button_rect(self, show_navigation: bool) -> rl.Rectangle:
+    # Keep the button in the camera area, clear of the left icon column used while navigating.
+    left = LEFT_COLUMN_WIDTH if show_navigation else 0
+    area_x = self._content_rect.x + left
+    area_w = self._content_rect.width - left
+    return rl.Rectangle(area_x + (area_w - BUTTON_W) / 2, self._content_rect.y + 8, BUTTON_W, BUTTON_H)
 
   def _render_offroad_text(self, rect: rl.Rectangle):
     rect = rl.Rectangle(rect.x + 8, rect.y + 8, rect.width - 16, rect.height - 16)

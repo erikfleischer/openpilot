@@ -76,6 +76,7 @@ class UIState:
         "vehicleParameters",
         "testJoystick",
         "rawAudioData",
+        "longitudinalDecelTest",
       ]
     )
 

@@ -2,7 +2,7 @@
 import math
 from numbers import Number
 
-from openpilot.cereal import log
+from openpilot.cereal import custom, log
 from opendbc.car.structs import car
 import openpilot.cereal.messaging as messaging
 from openpilot.common.constants import CV
@@ -18,6 +18,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, STEER_ANGLE_SATURATION_THRESHOLD
 from openpilot.selfdrive.controls.lib.latcontrol_curvature import LatControlCurvature
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
+from openpilot.selfdrive.controls.lib.decel_test import DecelTest
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
@@ -40,8 +41,8 @@ class Controls:
 
     self.sm = messaging.SubMaster(['lateralDelay', 'vehicleParameters', 'lateralTorqueParameters', 'modelV2', 'selfdriveState',
                                    'extrinsicsCalibration', 'deviceMotion', 'longitudinalPlan', 'lateralManeuverPlan', 'carState', 'carOutput',
-                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance'], poll='selfdriveState')
-    self.pm = messaging.PubMaster(['carControl', 'controlsState'])
+                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'decelTestButton'], poll='selfdriveState')
+    self.pm = messaging.PubMaster(['carControl', 'controlsState', 'longitudinalDecelTest'])
 
     self.steer_limited_by_safety = False
     self.curvature = 0.0
@@ -51,6 +52,8 @@ class Controls:
     self.calibrated_pose: Pose | None = None
 
     self.LoC = LongControl(self.CP)
+    self.decel_test = DecelTest()
+    self._decel_request_id = 0
     self.VM = VehicleModel(self.CP)
     self.LaC: LatControl
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
@@ -61,6 +64,26 @@ class Controls:
       self.LaC = LatControlPID(self.CP, self.CI, DT_CTRL)
     elif self.CP.lateralTuning.which() == 'torque':
       self.LaC = LatControlTorque(self.CP, self.CI, DT_CTRL)
+
+  def _decel_button_pressed(self) -> bool:
+    if not self.sm.updated['decelTestButton']:
+      return False
+    request_id = int(self.sm['decelTestButton'].requestId)
+    if request_id == self._decel_request_id:
+      return False
+    self._decel_request_id = request_id
+    return True
+
+  def _publish_decel_test(self) -> None:
+    if not self.decel_test.publish:
+      return
+    self.decel_test.publish = False
+    msg = messaging.new_message('longitudinalDecelTest', valid=True)
+    test = msg.longitudinalDecelTest
+    test.active = self.decel_test.active
+    test.accel = float(self.decel_test.accel)
+    test.status = getattr(custom.LongitudinalDecelTest.Status, self.decel_test.status.name)
+    self.pm.send('longitudinalDecelTest', msg)
 
   def update(self):
     self.sm.update(15)
@@ -114,9 +137,25 @@ class Controls:
     if not CC.longActive:
       self.LoC.reset()
 
-    # accel PID loop
+    # accel PID loop. A running decel test replaces the output and does not
+    # update the PID, so the integrator cannot change the command.
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+    if self._decel_button_pressed():
+      if self.decel_test.active:
+        self.decel_test.cancel()
+      elif CC.longActive:
+        actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+        self.decel_test.start(actuators.accel)
+        self.LoC.reset()
+
+    override = self.decel_test.poll(CC.longActive)
+    if override is None:
+      actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+      # The end frame is logged with the accel actually sent after the handback.
+      if self.decel_test.publish and not self.decel_test.active:
+        self.decel_test.accel = actuators.accel
+    else:
+      actuators.accel = override
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
@@ -217,6 +256,7 @@ class Controls:
       cs.lateralControlState.torqueState = lac_log
 
     self.pm.send('controlsState', dat)
+    self._publish_decel_test()
 
     # carControl
     cc_send = messaging.new_message('carControl')

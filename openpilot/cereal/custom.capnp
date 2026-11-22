@@ -10,10 +10,23 @@ $Cxx.namespace("cereal");
 # DO rename the structs
 # DON'T change the identifier (e.g. @0x81c2f05a394cf4af)
 
-struct CustomReserved0 @0x81c2f05a394cf4af {
+struct DecelTestButton @0x81c2f05a394cf4af {
+  requestId @0 :UInt32;
 }
 
-struct CustomReserved1 @0xaedffd8f31e7b55d {
+struct LongitudinalDecelTest @0xaedffd8f31e7b55d {
+  active @0 :Bool;
+  accel @1 :Float32;
+  status @2 :Status;
+
+  enum Status {
+    rampToZero @0;
+    hold @1;
+    rampDown @2;
+    rampUp @3;
+    finished @4;
+    cancelled @5;
+  }
 }
 
 struct CustomReserved2 @0xf35cc4560bbf6ec2 {
