@@ -3,7 +3,7 @@ import numpy as np
 from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 
 MAX_LAT_ACCEL = 2.8
-MAX_ACCEL_OFFSET = 0.5
+MAX_ACCEL_OFFSET = 0.0
 MAX_OFFSET_JERK = 0.5
 LOOKAHEAD_TIME = 6.0
 

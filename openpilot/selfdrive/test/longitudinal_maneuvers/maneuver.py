@@ -9,6 +9,9 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
+from openpilot.selfdrive.modeld.constants import ModelConstants
+
+LEAD_T = list(ModelConstants.LEAD_T_IDXS)
 
 
 class Maneuver:
@@ -33,6 +36,7 @@ class Maneuver:
     self.lead_relevancy = kwargs.get("lead_relevancy", False)
     self.only_lead2 = kwargs.get("only_lead2", False)
     only_radar = kwargs.get("only_radar", False)
+    self.only_radar = only_radar
     prob_lead_values = kwargs.get("prob_lead_values", [1.0] * len(breakpoints))
 
     # ego state, to be simulated
@@ -66,15 +70,39 @@ class Maneuver:
       radar.leadOne = lead
 
     # Model requests more acceleration so the lead policy must handle slowdowns.
+    # Lead trajectories let the MPC anchor on radar. A radar-only lead still needs
+    # model probability above 0.5 before process_lead will use that radar distance.
     model = log.ModelDataV2()
     model.action.desiredAcceleration = float(self.a_ego[i] + 0.5)
+    d_rel = max(0., float(self.x_lead[i] - self.x_ego[i])) if self.lead_relevancy else 200.
+    a_lead = float(self.a_lead[i]) if self.lead_relevancy else 0.
+    ts = np.asarray(LEAD_T, dtype=np.float64)
+    v_traj = np.maximum(v_lead + a_lead * ts, 0.0)
+    x_traj = np.empty_like(ts)
+    x_traj[0] = d_rel
+    for k in range(1, len(ts)):
+      dt = ts[k] - ts[k - 1]
+      x_traj[k] = x_traj[k - 1] + 0.5 * (v_traj[k] + v_traj[k - 1]) * dt
+    model.init('leadsV3', 2)
+    for lead_i, lead in enumerate(model.leadsV3):
+      if self.only_lead2:
+        p = prob if lead_i == 1 else 0.0
+      else:
+        p = max(prob, 0.9) if self.only_radar else prob
+      lead.prob = float(p)
+      lead.t = LEAD_T
+      lead.x = [float(x) for x in x_traj]
+      lead.y = [0.0] * len(ts)
+      lead.v = [float(v) for v in v_traj]
+      lead.a = [a_lead] * len(ts)
     return {
       'radarState': radar,
       'modelV2': model,
       'carState': car.CarState(vEgo=v_ego, standstill=v_ego < 0.01, vCruise=float(self.v_cruise[i] * CV.MS_TO_KPH)),
       'controlsState': log.ControlsState(longControlState=LongCtrlState.pid if self.enabled else LongCtrlState.off, forceDecel=self.force_decel),
-      'selfdriveState': log.SelfdriveState(personality=self.personality),
+      'selfdriveState': log.SelfdriveState(personality=self.personality, enabled=self.enabled),
       'vehicleParameters': log.VehicleParameters(),
+      'carControl': car.CarControl(),
     }
 
   def _step(self, i):
@@ -103,9 +131,13 @@ class Maneuver:
       valid = False
 
     if self.ensure_start and self.lead_relevancy:
+      # A resume has succeeded once the car is moving. Later gap shaping can
+      # leave ego slightly slower than the lead, and that is not a failed start.
       not_starting_since = None
-      not_starting = (self.v_lead > self.v_ego) & (self.a_ego < 1e-3)
-      for now, waiting in zip(self.t, not_starting, strict=True):
+      for now, vl, ve, ae in zip(self.t, self.v_lead, self.v_ego, self.a_ego, strict=True):
+        if ve > 1.0:
+          break
+        waiting = vl > ve and ae < 1e-3
         if not waiting:
           not_starting_since = None
         elif not_starting_since is None:

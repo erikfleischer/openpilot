@@ -20,6 +20,8 @@ KM_TO_MILE = 0.621371
 CRUISE_DISABLED_CHAR = '–'
 
 SET_SPEED_PERSISTENCE = 2.5  # seconds
+# Show vCruiseLimited while it is at least this far under the current speed.
+V_CRUISE_LIMITED_TOLERANCE_KPH = 3.0
 WHEEL_SIZE = 52
 WHEEL_WHITE = rl.Color(255, 255, 255, 255)
 WHEEL_GREEN = rl.Color(0, 255, 64, 255)
@@ -74,6 +76,7 @@ class FontSizes:
 class Colors:
   WHITE = rl.WHITE
   WHITE_TRANSLUCENT = rl.Color(255, 255, 255, 200)
+  LIGHT_BLUE = rl.Color(153, 204, 255, 255)
 
 
 FONT_SIZES = FontSizes()
@@ -87,6 +90,8 @@ class HudRenderer(Widget):
     self.is_cruise_set: bool = False
     self.is_cruise_available: bool = True
     self.set_speed: float = SET_SPEED_NA
+    self._cruise_limited: bool = False
+    self._v_cruise_limited_kph: float = 0.0
     self._set_speed_changed_time: float = 0
     self.speed: float = 0.0
     self.v_ego_cluster_seen: bool = False
@@ -136,6 +141,8 @@ class HudRenderer(Widget):
     if not ui_state.received_since_started("carState"):
       self.is_cruise_set = False
       self.set_speed = SET_SPEED_NA
+      self._cruise_limited = False
+      self._v_cruise_limited_kph = 0.0
       self.speed = 0.0
       return
 
@@ -157,6 +164,22 @@ class HudRenderer(Widget):
     v_ego = v_ego_cluster if self.v_ego_cluster_seen else car_state.vEgo
     speed_conversion = CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
     self.speed = max(0.0, v_ego * speed_conversion)
+    self._update_cruise_limited(sm, v_ego)
+
+  def _update_cruise_limited(self, sm, v_ego: float) -> None:
+    """Show vCruiseLimited while it is below the current speed by the tolerance."""
+    self._cruise_limited = False
+    self._v_cruise_limited_kph = 0.0
+    if not self.is_cruise_set or not ui_state.has_longitudinal_control:
+      return
+    if not sm.alive['longitudinalMpcObstacles'] or not sm.valid['longitudinalMpcObstacles']:
+      return
+
+    v_limited_kph = sm['longitudinalMpcObstacles'].vCruiseLimited * CV.MS_TO_KPH
+    v_ego_kph = v_ego * CV.MS_TO_KPH
+    if v_limited_kph > 1.0 and v_limited_kph < v_ego_kph - V_CRUISE_LIMITED_TOLERANCE_KPH:
+      self._cruise_limited = True
+      self._v_cruise_limited_kph = v_limited_kph
 
   def _render(self, rect: rl.Rectangle) -> None:
     """Render HUD elements to the screen."""
@@ -226,7 +249,9 @@ class HudRenderer(Widget):
 
   def _draw_set_speed(self, rect: rl.Rectangle) -> None:
     """Draw the MAX speed indicator box."""
-    alpha = self._set_speed_alpha_filter.update(0 < rl.get_time() - self._set_speed_changed_time < SET_SPEED_PERSISTENCE and self._can_draw_top_icons)
+    show_set_speed = 0 < rl.get_time() - self._set_speed_changed_time < SET_SPEED_PERSISTENCE and self._can_draw_top_icons
+    show_limited = self._cruise_limited and self._can_draw_top_icons and self._engaged
+    alpha = self._set_speed_alpha_filter.update(show_set_speed or show_limited)
     alpha = self._set_speed_alpha = alpha * (1 - status_fade.weight(UIStatus.DISENGAGED))
     if alpha < 1e-2:
       return
@@ -239,10 +264,11 @@ class HudRenderer(Widget):
     rl.draw_circle_gradient(rl.Vector2(x + circle_radius, y + circle_radius), circle_radius,
                             rl.Color(0, 0, 0, int(255 / 2 * alpha)), rl.BLANK)
 
-    set_speed_color = rl.Color(255, 255, 255, int(255 * 0.9 * alpha))
+    speed_color = COLORS.LIGHT_BLUE if self._cruise_limited else COLORS.WHITE
+    set_speed_color = rl.Color(speed_color.r, speed_color.g, speed_color.b, int(255 * 0.9 * alpha))
     max_color = rl.Color(255, 255, 255, int(255 * 0.9 * alpha))
 
-    set_speed = self.set_speed
+    set_speed = self._v_cruise_limited_kph if self._cruise_limited else self.set_speed
     if self.is_cruise_set and not ui_state.is_metric:
       set_speed *= KM_TO_MILE
 
