@@ -202,12 +202,17 @@ class LongitudinalPlanner:
     longitudinalPlan.fcw = self.fcw
 
     longitudinalPlan.aTarget = float(self.output_a_target)
-    longitudinalPlan.accelBoost = float(self.accel_boost.total_boost)
     longitudinalPlan.shouldStop = bool(self.output_should_stop)
     longitudinalPlan.allowBrake = True
     longitudinalPlan.allowThrottle = bool(self.allow_throttle)
 
     pm.send('longitudinalPlan', plan_send)
+
+    boost_send = messaging.new_message('longitudinalAccelBoost')
+    boost_send.valid = plan_send.valid
+    boost_send.logMonoTime = plan_send.logMonoTime
+    boost_send.longitudinalAccelBoost.accelBoost = float(self.accel_boost.total_boost)
+    pm.send('longitudinalAccelBoost', boost_send)
 
     obstacles_send = messaging.new_message('longitudinalMpcObstacles')
     obstacles_send.valid = plan_send.valid

@@ -25,7 +25,9 @@ struct LongitudinalMpcObstacles @0x81c2f05a394cf4af {
   vCruiseLimited @6 :Float32;
 }
 
-struct CustomReserved1 @0xaedffd8f31e7b55d {
+struct LongitudinalAccelBoost @0xaedffd8f31e7b55d {
+  # Accel-boost command before speed and accel scaling, m/s^2.
+  accelBoost @0 :Float32;
 }
 
 struct CustomReserved2 @0xf35cc4560bbf6ec2 {
